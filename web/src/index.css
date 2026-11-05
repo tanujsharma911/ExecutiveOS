@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #fafaf9;
+  --foreground: #18181b;
+  --card: #ffffff;
+  --card-foreground: #18181b;
+  --muted: #f4f4f3;
+  --muted-foreground: #6b6b73;
+  --border: #e7e6e3;
+  --input: #e2e1de;
+  --ring: #6366f1;
+  --primary: #18181b;
+  --primary-foreground: #fafafa;
+  --secondary: #f2f1ef;
+  --secondary-foreground: #27272a;
+  --accent: #f1f0fb;
+  --accent-foreground: #3f3fae;
+  --ai: #5b5bd6;
+  --ai-soft: #eeeefc;
+  --success: #15803d;
+  --success-soft: #ecf7ef;
+  --warning: #b45309;
+  --warning-soft: #fdf4e7;
+  --danger: #b91c1c;
+  --danger-soft: #fdeeee;
+  --sidebar: #f5f5f3;
+  --radius: 0.625rem;
+}
+
+@theme inline {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Newsreader", ui-serif, Georgia, serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-ai: var(--ai);
+  --color-ai-soft: var(--ai-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-sidebar: var(--sidebar);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  .grid > * { min-width: 0; }
+  * { @apply border-border; }
+  html { -webkit-font-smoothing: antialiased; }
+  body { @apply bg-background text-foreground font-sans text-[14px]; font-feature-settings: "cv11", "ss01"; }
+  ::selection { background: #dcdcfb; }
+}
+
+@keyframes flame {
+  0%, 100% { transform: scale(1) rotate(-2deg); filter: drop-shadow(0 0 0 rgba(234, 88, 12, 0)); }
+  50% { transform: scale(1.12) rotate(3deg); filter: drop-shadow(0 0 6px rgba(234, 88, 12, 0.45)); }
+}
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pop { 0% { transform: scale(0.6); opacity: 0 } 70% { transform: scale(1.08); opacity: 1 } 100% { transform: scale(1) } }
+@keyframes shimmer { from { background-position: -200% 0 } to { background-position: 200% 0 } }
+@keyframes draw { from { stroke-dashoffset: 120 } to { stroke-dashoffset: 0 } }
+.animate-flame { animation: flame 1.6s ease-in-out infinite; transform-origin: 50% 80%; }
+.animate-rise { animation: rise 0.35s ease-out both; }
+.animate-pop { animation: pop 0.5s cubic-bezier(.2,.9,.3,1.3) both; }
+/* AI is generating: soft sparkle pulse and typing dots */
+.ai-sparkle { animation: ai-sparkle 1.6s ease-in-out infinite; transform-origin: center; }
+@keyframes ai-sparkle { 0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.65 } 50% { transform: scale(1.18) rotate(14deg); opacity: 1 } }
+.ai-dots span { display: inline-block; animation: ai-dot 1.2s ease-in-out infinite; }
+.ai-dots span:nth-child(2) { animation-delay: 0.15s; }
+.ai-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes ai-dot { 0%, 60%, 100% { opacity: 0.25; transform: translateY(0) } 30% { opacity: 1; transform: translateY(-2px) } }
+@media (prefers-reduced-motion: reduce) { .ai-sparkle, .ai-dots span, .ai-shimmer { animation: none; } }
+.ai-shimmer { background: linear-gradient(90deg, var(--ai-soft) 25%, #f7f7fe 50%, var(--ai-soft) 75%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+
+/* AG Grid integration */
+.ag-theme-exec { --ag-font-family: var(--font-sans); }
+.ag-cell-wrap-text { word-break: break-word; }
+.ag-cell > div, .ag-cell .ag-cell-value > div { line-height: 1.35; }

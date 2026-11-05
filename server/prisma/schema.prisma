@@ -1,0 +1,307 @@
+// ExecutiveOS data model
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  COACH
+  CLIENT
+}
+
+enum Frequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  ANNUALLY
+  ONE_TIME
+}
+
+enum FormStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum QuestionType {
+  SHORT_TEXT
+  LONG_TEXT
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  RATING
+  YES_NO
+  DATE
+  NUMBER
+  EMOTION
+  GOAL_PROGRESS
+}
+
+enum SubmissionStatus {
+  DRAFT
+  SUBMITTED
+}
+
+enum CommitmentStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  PARTIALLY_COMPLETED
+  BLOCKED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum SessionStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum FeedbackStatus {
+  RELEVANT
+  NOT_RELEVANT
+  DISCUSSED
+  FOLLOW_UP
+}
+
+enum SuggestionStatus {
+  PENDING
+  APPROVED
+  DISMISSED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role
+  title        String?
+  avatarColor  String   @default("#4f46e5")
+  timezone     String   @default("UTC")
+  createdAt    DateTime @default(now())
+
+  clientProfile  ClientProfile? @relation("ClientUser")
+  coachedClients ClientProfile[] @relation("CoachClients")
+  programs       Program[]
+  forms          Form[]
+  notifications  Notification[]
+}
+
+model Program {
+  id            String   @id @default(cuid())
+  coachId       String
+  coach         User     @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  name          String
+  description   String
+  durationWeeks Int
+  focusAreas    String[]
+  status        String   @default("ACTIVE")
+  createdAt     DateTime @default(now())
+
+  clients ClientProfile[]
+}
+
+model ClientProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation("ClientUser", fields: [userId], references: [id], onDelete: Cascade)
+  coachId      String
+  coach        User     @relation("CoachClients", fields: [coachId], references: [id])
+  programId    String?
+  program      Program? @relation(fields: [programId], references: [id])
+  company      String
+  designation  String
+  industry     String
+  companySize  String
+  location     String
+  phone        String?
+  /// Client-managed links (LinkedIn, website, talks…): [{ label, url }]
+  links        Json     @default("[]")
+  startDate    DateTime
+  coachNotes   String   @default("")
+  createdAt    DateTime @default(now())
+
+  assignments     FormAssignment[]
+  submissions     Submission[]
+  commitments     Commitment[]
+  sessions        Session[]
+  feedback        InsightFeedback[]
+  formSuggestions FormSuggestion[]
+  aiReport        AiReport?
+}
+
+model Form {
+  id          String     @id @default(cuid())
+  coachId     String
+  coach       User       @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  title       String
+  description String     @default("")
+  frequency   Frequency
+  status      FormStatus @default(DRAFT)
+  aiGenerated Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  questions   Question[]
+  assignments FormAssignment[]
+  submissions Submission[]
+  suggestions FormSuggestion[]
+}
+
+model Question {
+  id        String       @id @default(cuid())
+  formId    String
+  form      Form         @relation(fields: [formId], references: [id], onDelete: Cascade)
+  order     Int
+  type      QuestionType
+  label     String
+  helpText  String?
+  required  Boolean      @default(false)
+  options   String[]
+  metricKey String?
+}
+
+model FormAssignment {
+  id         String        @id @default(cuid())
+  formId     String
+  form       Form          @relation(fields: [formId], references: [id], onDelete: Cascade)
+  clientId   String
+  client     ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  assignedAt DateTime      @default(now())
+
+  @@unique([formId, clientId])
+}
+
+model Submission {
+  id          String           @id @default(cuid())
+  formId      String
+  form        Form             @relation(fields: [formId], references: [id], onDelete: Cascade)
+  clientId    String
+  client      ClientProfile    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  status      SubmissionStatus @default(DRAFT)
+  periodStart DateTime
+  dueAt       DateTime
+  submittedAt DateTime?
+  /// Array of { questionId, label, type, metricKey, value }
+  answers     Json
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([formId, clientId, periodStart])
+}
+
+model Commitment {
+  id          String           @id @default(cuid())
+  clientId    String
+  client      ClientProfile    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  sessionId   String?
+  session     Session?         @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  title       String
+  description String           @default("")
+  dueDate     DateTime
+  priority    Priority         @default(MEDIUM)
+  goal        String
+  theme       String?
+  status      CommitmentStatus @default(NOT_STARTED)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  updates CommitmentUpdate[]
+}
+
+model CommitmentUpdate {
+  id           String           @id @default(cuid())
+  commitmentId String
+  commitment   Commitment       @relation(fields: [commitmentId], references: [id], onDelete: Cascade)
+  status       CommitmentStatus
+  note         String
+  authorRole   Role
+  createdAt    DateTime         @default(now())
+}
+
+model Session {
+  id           String        @id @default(cuid())
+  clientId     String
+  client       ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  scheduledAt  DateTime
+  durationMin  Int           @default(60)
+  topic        String
+  status       SessionStatus @default(SCHEDULED)
+  summary      String        @default("")
+  topics       String[]
+  observations String        @default("")
+  decisions    String[]
+  followUps    String[]
+  prepNotes    String        @default("")
+  meetingLink  String?
+  createdAt    DateTime      @default(now())
+
+  commitments Commitment[]
+  feedback    InsightFeedback[]
+}
+
+model InsightFeedback {
+  id         String         @id @default(cuid())
+  clientId   String
+  client     ClientProfile  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  sessionId  String?
+  session    Session?       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  insightKey String
+  label      String
+  status     FeedbackStatus
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  @@unique([clientId, sessionId, insightKey])
+}
+
+model FormSuggestion {
+  id        String           @id @default(cuid())
+  clientId  String
+  client    ClientProfile    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  formId    String?
+  form      Form?            @relation(fields: [formId], references: [id], onDelete: SetNull)
+  theme     String
+  question  String
+  type      QuestionType
+  rationale String
+  evidence  Json
+  status    SuggestionStatus @default(PENDING)
+  createdAt DateTime         @default(now())
+
+  @@unique([clientId, theme, question])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  link      String?
+  kind      String   @default("info")
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+/// Saved AI intelligence report per client. Reused until the client's data changes
+/// (fingerprint = reflections + commitments + day + model chain), so restarts and
+/// page loads don't trigger new LLM calls.
+model AiReport {
+  clientId    String        @id
+  client      ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  fingerprint String
+  model       String
+  report      Json
+  generatedAt DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
