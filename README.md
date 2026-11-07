@@ -31,6 +31,8 @@ Built for the **“Build What's Next with PayPal and AI”** hackathon.
   - [Charts (AG Charts)](#charts-ag-charts)
   - [Client experience](#client-experience)
 - [Architecture](#architecture)
+  - [System diagram](#system-diagram)
+  - [Checkout flow](#checkout-flow)
   - [Project layout](#project-layout)
   - [Tech stack](#tech-stack)
   - [Data model](#data-model)
@@ -39,6 +41,7 @@ Built for the **“Build What's Next with PayPal and AI”** hackathon.
 - [PayPal integration in detail](#paypal-integration-in-detail)
 - [Privacy and safety](#privacy-and-safety)
 - [Logging](#logging)
+- [Deploying to Render](#deploying-to-render)
 - [Useful scripts](#useful-scripts)
 - [Notes and limits](#notes-and-limits)
 - [License](#license)
@@ -263,6 +266,98 @@ Emotional and confidence trends on the client page (Line, Area or Bar, remembere
 
 ## Architecture
 
+### System diagram
+
+```mermaid
+flowchart TB
+  Coach(["Coach"]):::person
+  Client(["Client"]):::person
+  Prospect(["Prospect"]):::person
+
+  CoachUI["<b>Coach workspace</b><br/>Prospects · Discovery Call Book · My Clients<br/>Report Cards · Programs · Session Calendar"]:::web
+  ClientUI["<b>Client app</b><br/>Reflections · Commitments<br/>Growth Journey · Sessions"]:::web
+  IntakeUI["<b>Public intake page</b><br/>programs · details · chat assistant<br/>PayPal buttons"]:::web
+
+  Routes["<b>Express 5 API</b><br/>JWT auth · roles · paused clients read-only<br/>/coach · /client · /forms · /sessions · /discovery · /public"]:::api
+
+  AI["<b>AI layer</b> · LangChain + LangGraph<br/>analysis tools · Report Card summary · session brief<br/>Discovery Call Book assist · intake chat assistant"]:::api
+  Pay["<b>Payments</b><br/>orders · subscriptions · webhooks<br/>account creation · renewal sync"]:::api
+  Mail["<b>Email</b>"]:::api
+
+  DB[("PostgreSQL 16<br/>Prisma 7")]:::data
+  LLM["Gemini<br/>→ Groq fallback"]:::ext
+  Pages["Prospects'<br/>public pages"]:::ext
+  PayPal["PayPal REST API<br/>Orders v2 · Subscriptions"]:::ext
+  Resend["Resend"]:::ext
+
+  Coach --> CoachUI
+  Client --> ClientUI
+  Prospect --> IntakeUI
+  CoachUI -- "HTTPS /api" --> Routes
+  ClientUI -- "HTTPS /api" --> Routes
+  IntakeUI -- "HTTPS /api/public" --> Routes
+  IntakeUI -. "payer approves" .-> PayPal
+  Routes --> AI
+  Routes --> Pay
+  Routes --> Mail
+  Routes --> DB
+  AI --> DB
+  Pay --> DB
+  AI --> LLM
+  AI --> Pages
+  Pay <-- "API calls · webhooks" --> PayPal
+  Mail --> Resend
+
+  classDef person fill:#f4f4f5,stroke:#a1a1aa,color:#18181b
+  classDef web fill:#eef2ff,stroke:#6366f1,color:#1e1b4b
+  classDef api fill:#ecfdf5,stroke:#10b981,color:#064e3b
+  classDef data fill:#fff7ed,stroke:#f59e0b,color:#78350f
+  classDef ext fill:#fdf2f8,stroke:#ec4899,color:#831843
+```
+
+Colours: grey = people, blue = web app (React), green = API (Express), orange = database, pink = external services. The web app also bundles AG Grid Enterprise, AG Charts, the Bryntum Calendar, TipTap and the PayPal JS SDK.
+
+- **One API, three front ends:** the coach workspace and client app call `/api` with a JWT; the public intake page calls `/api/public` without signing in.
+- **AI:** every AI feature runs in the API through LangChain (Gemini first, Groq as fallback). The browser never talks to an LLM directly.
+- **Payments:** the API creates and checks every PayPal order and subscription, so the browser can't change the amount. PayPal sends renewals and failures back as webhooks, with a periodic sync as backup.
+- **Data:** one PostgreSQL database through Prisma; emails go out through Resend.
+
+### Checkout flow
+
+How a prospect goes from the intake link to a client account:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor P as Prospect
+  participant W as Intake page
+  participant A as API
+  participant AI as Intake assistant<br/>(LangChain → Gemini/Groq)
+  participant PP as PayPal
+  participant DB as Postgres
+  participant E as Resend
+
+  P->>W: Open coach's intake link
+  W->>A: GET /api/public/intake/:token
+  A->>DB: Coach, programs, prospect prefill
+  P->>W: "How does auto-renew work?"
+  W->>A: POST /intake/:token/chat
+  A->>AI: Question + programs + payment rules
+  AI-->>A: Reply, payment schedule, "Choose program"
+  A->>DB: Save chat (coach can read it)
+  P->>W: Pick program, fill details, click PayPal
+  W->>A: Create order (one-time) or subscription (auto-renew)
+  A->>PP: Orders v2 / Subscriptions API
+  PP-->>W: PayPal window, payer approves
+  W->>A: Capture order / activate subscription
+  A->>PP: Capture, read subscription
+  A->>A: Check amount in cents
+  A->>DB: Create client exactly once, link prospect and chat
+  A->>E: Welcome email with sign-in details
+  A-->>W: Success screen
+  Note over A,PP: Later renewals and failures arrive by webhook or periodic sync →<br/>notify coach and client, pause after 3 failures, reactivate on payment
+```
+
 ### Project layout
 
 ```
@@ -387,6 +482,21 @@ Every API request and every LLM and tool call is logged to the server console.
 - `reqId` links a request to the LLM and tool calls it triggered (also returned as the `X-Request-Id` header).
 - PayPal calls log the method, path, status, time and PayPal debug id.
 - `LOG_LEVEL` = `debug` · `info` (default) · `warn` · `error`; `LOG_FORMAT` = `pretty` (default) or `json`.
+
+## Deploying to Render
+
+`render.yaml` is a Render Blueprint. It creates one **Starter web service** that runs the API and also serves the built web app (`web/dist`), plus one **Postgres 16** database (basic-256mb). About $13/month in total.
+
+Because the web app and API share one URL, the browser calls `/api` on the same origin: no CORS setup and no `VITE_API_URL`. `APP_URL` (used in emails and intake links) defaults to Render's public URL.
+
+1. Push the repo to GitHub.
+2. In Render: **New → Blueprint**, pick the repo. Render reads `render.yaml`.
+3. Fill in the secrets it asks for: `GOOGLE_API_KEY`, `GROQ_API_KEY`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, `VITE_BRYNTUM_LICENSE_KEY`, `VITE_AG_GRID_LICENSE_KEY`. Leave `PAYPAL_WEBHOOK_ID` empty for now. `JWT_SECRET` is generated for you.
+4. Each deploy builds both apps, runs `prisma migrate deploy`, then starts the server. Health check: `/api/health`.
+5. After the first deploy, open the service's **Shell** and seed the demo data once: `npm --prefix server run db:seed`.
+6. In the PayPal developer dashboard, add a sandbox webhook to `https://<your-service>.onrender.com/api/public/paypal/webhook` with the events `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.SALE.COMPLETED`, `PAYMENT.SALE.DENIED` and `BILLING.SUBSCRIPTION.*`. Copy its ID into `PAYPAL_WEBHOOK_ID` on Render (this redeploys).
+
+`VITE_*` keys are read at build time, so changing them needs a redeploy (Render does this when you save environment variables).
 
 ## Useful scripts
 

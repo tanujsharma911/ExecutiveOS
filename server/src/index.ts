@@ -1,6 +1,9 @@
 import './env.js'
 import bcrypt from 'bcryptjs'
 import cors from 'cors'
+import { existsSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import express, { type NextFunction, type Request, type Response } from 'express'
 import { z, ZodError } from 'zod'
 import { aiMode, aiModelName } from './ai/model.js'
@@ -100,6 +103,18 @@ app.use('/api/discovery', discovery)
 app.use('/api/forms', forms)
 app.use('/api/client', client)
 app.use('/api', work)
+
+// Production: serve the built web app (web/dist) from this same service, so the browser calls /api on the same origin.
+const webDist = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist')
+if (existsSync(webDist)) {
+  app.use('/assets', express.static(join(webDist, 'assets'), { immutable: true, maxAge: '1y' }))
+  app.use(express.static(webDist, { index: false, maxAge: '1h' }))
+  app.get(/^\/(?!api(\/|$)).*/, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache')
+    res.sendFile(join(webDist, 'index.html'))
+  })
+  log.info('Serving the web app', { from: webDist })
+}
 
 app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof HttpError) {
