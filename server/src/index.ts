@@ -6,11 +6,14 @@ import { z, ZodError } from 'zod'
 import { aiMode, aiModelName } from './ai/model.js'
 import { createLogger } from './lib/logger.js'
 import { requestLogger } from './lib/requestLogger.js'
+import { startSubscriptionSync } from './lib/subscriptions.js'
 import { HttpError, requireAuth, signToken } from './auth.js'
 import { prisma } from './db.js'
 import { client } from './routes/client.js'
 import { coach } from './routes/coach.js'
+import { discovery } from './routes/discovery.js'
 import { forms } from './routes/forms.js'
+import { publicRoutes } from './routes/public.js'
 import { work } from './routes/work.js'
 
 const app = express()
@@ -24,7 +27,7 @@ app.get('/api/health', async (_req, res) => {
   res.json({ ok: true, ai: { mode: aiMode(), model: aiModelName() } })
 })
 
-const publicUser = (u: { id: string; email: string; name: string; role: string; title: string | null; avatarColor: string; timezone: string; clientProfile?: { id: string } | null }) => ({
+const publicUser = (u: { id: string; email: string; name: string; role: string; title: string | null; avatarColor: string; timezone: string; mustChangePassword?: boolean; clientProfile?: { id: string; active?: boolean } | null }) => ({
   id: u.id,
   email: u.email,
   name: u.name,
@@ -33,40 +36,51 @@ const publicUser = (u: { id: string; email: string; name: string; role: string; 
   avatarColor: u.avatarColor,
   timezone: u.timezone,
   clientId: u.clientProfile?.id ?? null,
+  mustChangePassword: !!u.mustChangePassword,
+  clientActive: u.clientProfile?.active ?? true,
 })
 
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = z.object({ email: z.string().email(), password: z.string().min(1) }).parse(req.body)
-  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() }, include: { clientProfile: { select: { id: true } } } })
+  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() }, include: { clientProfile: { select: { id: true, active: true } } } })
   if (!user || !(await bcrypt.compare(password, user.passwordHash))) throw new HttpError(401, 'Invalid email or password')
   res.json({ token: signToken(user.id), user: publicUser(user) })
 })
 
 app.get('/api/demo-accounts', async (_req, res) => {
   if (process.env.SHOW_DEMO_ACCOUNTS === 'false') return res.json([])
-  const users = await prisma.user.findMany({ select: { email: true, name: true, role: true, title: true, avatarColor: true }, orderBy: [{ role: 'asc' }, { name: 'asc' }] })
+  // Coaches, plus clients who are active (not paused by a failed renewal).
+  const users = await prisma.user.findMany({
+    where: { OR: [{ role: 'COACH' }, { role: 'CLIENT', clientProfile: { active: true } }] },
+    select: { email: true, name: true, role: true, title: true, avatarColor: true },
+    orderBy: [{ role: 'asc' }, { name: 'asc' }],
+  })
   res.json(users)
 })
+
+app.use('/api/public', publicRoutes)
 
 app.use('/api', requireAuth)
 
 app.get('/api/auth/me', async (req, res) => {
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.id }, include: { clientProfile: { select: { id: true } } } })
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.id }, include: { clientProfile: { select: { id: true, active: true } } } })
   res.json({ user: publicUser(user), ai: { mode: aiMode(), model: aiModelName() } })
 })
 
 app.patch('/api/auth/me', async (req, res) => {
   const body = z.object({ name: z.string().min(2).optional(), title: z.string().optional(), timezone: z.string().optional() }).parse(req.body)
-  const user = await prisma.user.update({ where: { id: req.user!.id }, data: body, include: { clientProfile: { select: { id: true } } } })
+  const user = await prisma.user.update({ where: { id: req.user!.id }, data: body, include: { clientProfile: { select: { id: true, active: true } } } })
   res.json({ user: publicUser(user) })
 })
 
 app.post('/api/auth/password', async (req, res) => {
-  const { current, next } = z.object({ current: z.string(), next: z.string().min(8) }).parse(req.body)
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.id } })
-  if (!(await bcrypt.compare(current, user.passwordHash))) throw new HttpError(400, 'Current password is incorrect')
-  await prisma.user.update({ where: { id: user.id }, data: { passwordHash: await bcrypt.hash(next, 10) } })
-  res.json({ ok: true })
+  const { current, next } = z.object({ current: z.string().optional().default(''), next: z.string().min(8, 'Use at least 8 characters') }).parse(req.body)
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.id }, include: { clientProfile: { select: { id: true, active: true } } } })
+  // A user still on an emailed temporary password signed in with it moments ago, so it isn't asked for again.
+  if (!user.mustChangePassword && !(await bcrypt.compare(current, user.passwordHash))) throw new HttpError(400, 'Current password is incorrect')
+  if (await bcrypt.compare(next, user.passwordHash)) throw new HttpError(400, 'Choose a password different from the temporary one')
+  const updated = await prisma.user.update({ where: { id: user.id }, data: { passwordHash: await bcrypt.hash(next, 10), mustChangePassword: false }, include: { clientProfile: { select: { id: true, active: true } } } })
+  res.json({ ok: true, user: publicUser(updated) })
 })
 
 app.get('/api/notifications', async (req, res) => {
@@ -82,6 +96,7 @@ app.post('/api/notifications/:id/read', async (req, res) => {
 })
 
 app.use('/api/coach', coach)
+app.use('/api/discovery', discovery)
 app.use('/api/forms', forms)
 app.use('/api/client', client)
 app.use('/api', work)
@@ -106,6 +121,7 @@ app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
 })
 
 const port = Number(process.env.PORT ?? 7461)
+startSubscriptionSync()
 app.listen(port, () => log.info(`ExecutiveOS API listening on http://localhost:${port}`, { aiMode: aiMode(), aiModel: aiModelName(), logLevel: process.env.LOG_LEVEL ?? 'info' }))
 
 process.on('unhandledRejection', (reason) => log.error('Unhandled promise rejection', { error: reason }))

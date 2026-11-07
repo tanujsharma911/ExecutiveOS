@@ -88,6 +88,13 @@ model User {
   title        String?
   avatarColor  String   @default("#4f46e5")
   timezone     String   @default("UTC")
+  /// Set for clients created from an intake payment (they get a random password by email).
+  mustChangePassword Boolean @default(false)
+  /// Coach only: token of their public intake link (/intake/:token). One reusable link per coach.
+  intakeToken  String?  @unique
+  /// Coach only: shown by the intake assistant. Empty = "I'll check with your coach".
+  refundPolicy   String @default("")
+  paymentContact String @default("")
   createdAt    DateTime @default(now())
 
   clientProfile  ClientProfile? @relation("ClientUser")
@@ -95,6 +102,11 @@ model User {
   programs       Program[]
   forms          Form[]
   notifications  Notification[]
+  prospects      Prospect[]      @relation("CoachProspects")
+  discoveryBooks DiscoveryBook[]
+  intakePayments IntakePayment[]
+  subscriptions  Subscription[]
+  intakeChats    IntakeChat[]
 }
 
 model Program {
@@ -105,10 +117,23 @@ model Program {
   description   String
   durationWeeks Int
   focusAreas    String[]
+  /// "What's included" (sessions, access, extras), used by the intake assistant
+  included      String   @default("")
+  /// Fixed price in US cents, charged through the coach's intake form (0 = not offered on the intake form).
+  priceCents    Int      @default(0)
+  /// ONE_TIME: paid once on the intake form. SUBSCRIPTION: PayPal charges the price again every durationWeeks until cancelled.
+  billingType   BillingType @default(ONE_TIME)
+  /// PayPal Subscriptions product + billing plan, created on first use. A plan is fixed to one price and term,
+  /// so paypalPlanKey ("<priceCents>:<durationWeeks>") tells when a new plan is needed.
+  paypalProductId String?
+  paypalPlanId    String?
+  paypalPlanKey   String?
   status        String   @default("ACTIVE")
   createdAt     DateTime @default(now())
 
-  clients ClientProfile[]
+  clients        ClientProfile[]
+  intakePayments IntakePayment[]
+  subscriptions  Subscription[]
 }
 
 model ClientProfile {
@@ -129,6 +154,9 @@ model ClientProfile {
   links        Json     @default("[]")
   startDate    DateTime
   coachNotes   String   @default("")
+  /// false when an auto-renewal failed PayPal's last retry: the client can still sign in and read, but not submit anything.
+  active         Boolean @default(true)
+  inactiveReason String?
   createdAt    DateTime @default(now())
 
   assignments     FormAssignment[]
@@ -138,6 +166,9 @@ model ClientProfile {
   feedback        InsightFeedback[]
   formSuggestions FormSuggestion[]
   aiReport        AiReport?
+  prospect        Prospect?
+  intakePayment   IntakePayment?
+  subscription    Subscription?
 }
 
 model Form {
@@ -304,4 +335,209 @@ model AiReport {
   report      Json
   generatedAt DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+}
+
+// ── Prospects → discovery calls → intake payment → client ─────────────────────
+
+enum ProspectStatus {
+  NEW
+  IN_DISCUSSION
+  NOT_A_FIT
+  INVITED
+  CONVERTED
+}
+
+enum CallMode {
+  ONLINE
+  OFFLINE
+}
+
+enum CallOutcome {
+  PENDING
+  GOOD_FIT
+  NOT_A_FIT
+  UNDECIDED
+}
+
+enum BillingType {
+  ONE_TIME
+  SUBSCRIPTION
+}
+
+enum SubscriptionStatus {
+  /// a renewal failed and PayPal is retrying
+  PAST_DUE
+  ACTIVE
+  /// PayPal's retries all failed (client inactive), or the coach paused it
+  SUSPENDED
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentStatus {
+  CREATED
+  COMPLETED
+  FAILED
+}
+
+/// A potential client the coach is talking to. Becomes a client after paying through the intake form.
+model Prospect {
+  id           String         @id @default(cuid())
+  coachId      String
+  coach        User           @relation("CoachProspects", fields: [coachId], references: [id], onDelete: Cascade)
+  name         String
+  email        String?
+  company      String         @default("")
+  role         String         @default("")
+  industry     String         @default("")
+  companySize  String         @default("")
+  location     String         @default("")
+  phone        String?
+  /// [{ label, url }]
+  links        Json           @default("[]")
+  notes        String         @default("")
+  status       ProspectStatus @default(NEW)
+  notFitReason String?
+  /// Prospect-safe note the coach approved for the intake assistant (never the raw call notes)
+  intakeNote   String         @default("")
+  clientId     String?        @unique
+  client       ClientProfile? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  books    ProspectBook[]
+  calls    DiscoveryCall[]
+  payments IntakePayment[]
+  chats    IntakeChat[]
+
+  @@index([coachId])
+}
+
+/// Discovery Call Book: rich text (TipTap JSON in `content`). One template per coach plus one copy per prospect.
+model DiscoveryBook {
+  id        String   @id @default(cuid())
+  coachId   String
+  coach     User     @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  title     String
+  prompt    String   @default("")
+  /// TipTap document JSON ({ type: 'doc', content }); older rows used { sections } and are converted on read.
+  content   Json
+  /// [{ url, title }] pages the AI read
+  sources   Json     @default("[]")
+  model     String   @default("")
+  version   Int      @default(1)
+  /// The coach's one master book (starting point for every prospect's copy).
+  isTemplate Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  prospects ProspectBook[]
+
+  @@index([coachId])
+}
+
+model ProspectBook {
+  prospectId String
+  prospect   Prospect      @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  bookId     String
+  book       DiscoveryBook @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  attachedAt DateTime      @default(now())
+
+  @@id([prospectId, bookId])
+}
+
+model DiscoveryCall {
+  id          String      @id @default(cuid())
+  prospectId  String
+  prospect    Prospect    @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  scheduledAt DateTime
+  durationMin Int         @default(30)
+  mode        CallMode    @default(ONLINE)
+  meetingLink String?
+  notes       String      @default("")
+  /// [{ label, flagged }] the book's fit-check signals, ticked by the coach
+  fitCheck    Json        @default("[]")
+  outcome     CallOutcome @default(PENDING)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([prospectId])
+}
+
+/// A PayPal order created from a coach's intake form. COMPLETED payments create the client.
+model IntakePayment {
+  id              String         @id @default(cuid())
+  coachId         String
+  coach           User           @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  prospectId      String?
+  prospect        Prospect?      @relation(fields: [prospectId], references: [id], onDelete: SetNull)
+  programId       String
+  program         Program        @relation(fields: [programId], references: [id], onDelete: Cascade)
+  email           String
+  /// Intake form answers: name, phone, company, role, …
+  details         Json
+  amountCents     Int
+  currency        String         @default("USD")
+  kind            BillingType    @default(ONE_TIME)
+  /// ONE_TIME: the PayPal order. SUBSCRIPTION: the PayPal subscription (its first payment).
+  paypalOrderId   String?        @unique
+  paypalSubscriptionId String?   @unique
+  /// The intake-assistant conversation that led to this payment, if any
+  chatId          String?
+  chat            IntakeChat?    @relation(fields: [chatId], references: [id], onDelete: SetNull)
+  paypalCaptureId String?
+  status          PaymentStatus  @default(CREATED)
+  clientId        String?        @unique
+  client          ClientProfile? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  createdAt       DateTime       @default(now())
+  completedAt     DateTime?
+
+  @@index([coachId])
+}
+
+/// A client's auto-renewing program (PayPal Subscriptions). PayPal bills every term and retries failed payments;
+/// webhooks (plus a periodic sync, for local dev without a public webhook URL) keep this row in step.
+model Subscription {
+  id                   String             @id @default(cuid())
+  coachId              String
+  coach                User               @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  clientId             String             @unique
+  client               ClientProfile      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  programId            String
+  program              Program            @relation(fields: [programId], references: [id], onDelete: Cascade)
+  paypalSubscriptionId String             @unique
+  paypalPlanId         String
+  status               SubscriptionStatus @default(ACTIVE)
+  amountCents          Int
+  intervalWeeks        Int
+  /// consecutive failed renewals reported by PayPal (reset when a payment succeeds)
+  failedPayments       Int                @default(0)
+  lastPaymentAt        DateTime?
+  nextBillingAt        DateTime?
+  lastFailureAt        DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([coachId])
+}
+
+/// A prospect's conversation with the intake assistant (programs and PayPal payments). The coach can read it.
+model IntakeChat {
+  id                String          @id @default(cuid())
+  coachId           String
+  coach             User            @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  prospectId        String?
+  prospect          Prospect?       @relation(fields: [prospectId], references: [id], onDelete: SetNull)
+  /// [{ role: 'user' | 'assistant', text, at, topic?, actions?, unanswered? }]
+  messages          Json            @default("[]")
+  selectedProgramId String?
+  /// coach already notified about a question the assistant couldn't answer
+  notifiedUnanswered Boolean        @default(false)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  payments IntakePayment[]
+
+  @@index([coachId])
+  @@index([prospectId])
 }

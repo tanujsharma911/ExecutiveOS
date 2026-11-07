@@ -10,6 +10,10 @@ export interface SessionUser {
   avatarColor: string
   timezone: string
   clientId: string | null
+  /** Signed in with an emailed temporary password: must choose a new one first. */
+  mustChangePassword?: boolean
+  /** false: the client's program is paused (renewal failed); read-only. */
+  clientActive?: boolean
 }
 
 interface AuthState {

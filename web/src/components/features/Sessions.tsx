@@ -1,16 +1,13 @@
-import { CalendarClock, CalendarPlus, Check, ChevronRight, ExternalLink, Link2, Plus, Sparkles, Video, Wand2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { CalendarPlus, Check, ChevronRight, ExternalLink, Link2, Plus, Sparkles, Video, Wand2 } from 'lucide-react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { EvidenceQuote } from '@/components/common/Insight'
-import { EmptyState } from '@/components/common/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader } from '@/components/ui/dialog'
 import { Input, Label, NativeSelect, Textarea } from '@/components/ui/input'
 import { Avatar, Skeleton } from '@/components/ui/misc'
-import { Segmented } from '@/components/ui/tabs'
 import { api, isAbortError, useAbortScope, useApi } from '@/lib/api'
 import type { ClientRow, Evidence, Priority, Session } from '@/lib/types'
 import { fmtDate, fmtTime } from '@/lib/utils'
@@ -305,140 +302,214 @@ export function SessionRecordDialog({ open, onOpenChange, session, clientId, cli
   )
 }
 
-function SessionCardsSkeleton() {
+const SessionCalendar = lazy(() => import('./SessionCalendar'))
+
+const STATUS_LABEL: Record<Session['status'], string> = { SCHEDULED: 'Scheduled', COMPLETED: 'Completed', CANCELLED: 'Cancelled' }
+const STATUS_DOT: Record<Session['status'], string> = { SCHEDULED: 'bg-ai', COMPLETED: 'bg-success', CANCELLED: 'bg-muted-foreground/50' }
+
+/** Everything about one session, shown when it's clicked in the calendar. */
+function SessionDetails({ s, role, showClient }: { s: Session; role: 'COACH' | 'CLIENT'; showClient: boolean }) {
   return (
-    <div className="grid gap-3" aria-busy="true" aria-label="Loading sessions">
-      {[0, 1, 2].map((i) => (
-        <Card key={i} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
-          <Skeleton className="h-[66px] w-16 shrink-0 rounded-lg" />
-          <div className="grid flex-1 gap-2 pt-0.5">
-            <div className="flex gap-2">
-              <Skeleton className="h-5 w-20 rounded-full" />
-              <Skeleton className="h-4 w-12" />
+    <div className="grid gap-3 text-[13px]">
+      <div className="flex flex-wrap items-center gap-2">
+        {showClient && s.client ? (
+          <span className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+            <Avatar name={s.client.user.name} color={s.client.user.avatarColor} size={18} /> {s.client.user.name}
+          </span>
+        ) : null}
+        <Badge variant={s.status === 'COMPLETED' ? 'success' : s.status === 'SCHEDULED' ? 'ai' : 'outline'}>{STATUS_LABEL[s.status]}</Badge>
+        <span className="text-[12px] text-muted-foreground">{s.durationMin} min</span>
+      </div>
+      {s.meetingLink ? (
+        <a href={s.meetingLink} target="_blank" rel="noopener noreferrer" className="inline-flex max-w-full items-center gap-1.5 text-[12.5px] text-ai hover:underline">
+          <Video className="size-3.5 shrink-0" />
+          <span className="truncate">{meetingHost(s.meetingLink)}</span>
+          <ExternalLink className="size-3 shrink-0" />
+        </a>
+      ) : null}
+      {s.summary ? <p className="leading-relaxed text-foreground/80">{s.summary}</p> : null}
+      {s.topics.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {s.topics.map((t) => (
+            <Badge key={t} variant="outline">
+              {t}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+      {s.status === 'COMPLETED' ? (
+        <div className="grid gap-3 text-[12.5px] sm:grid-cols-2">
+          {role === 'COACH' && s.observations ? (
+            <div>
+              <div className="font-medium text-muted-foreground">Observations (private)</div>
+              <div>{s.observations}</div>
             </div>
-            <Skeleton className="h-4 w-72 max-w-full" />
-            <Skeleton className="h-3 w-32" />
-          </div>
-          <div className="grid gap-2 sm:w-32">
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-full" />
-          </div>
-        </Card>
-      ))}
+          ) : null}
+          {s.decisions.length ? (
+            <div>
+              <div className="font-medium text-muted-foreground">Decisions</div>
+              <ul className="list-disc pl-4">{s.decisions.map((x) => <li key={x}>{x}</li>)}</ul>
+            </div>
+          ) : null}
+          {s.followUps.length ? (
+            <div>
+              <div className="font-medium text-muted-foreground">Follow-ups</div>
+              <ul className="list-disc pl-4">{s.followUps.map((x) => <li key={x}>{x}</li>)}</ul>
+            </div>
+          ) : null}
+          {s.commitments?.length ? (
+            <div>
+              <div className="font-medium text-muted-foreground">New commitments</div>
+              <ul className="list-disc pl-4">{s.commitments.map((x) => <li key={x.id}>{x.title}</li>)}</ul>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }
 
+/** Session calendar (Bryntum) for the coach, a single client's tab, or the client's own app. */
 export function SessionsPanel({ clientId, role = 'COACH' }: { clientId?: string; role?: 'COACH' | 'CLIENT' }) {
-  const { data, loading } = useApi<Session[]>(`/sessions${clientId && role === 'COACH' ? `?clientId=${clientId}` : ''}`, [clientId])
+  const { data, loading, setData } = useApi<Session[]>(`/sessions${clientId && role === 'COACH' ? `?clientId=${clientId}` : ''}`, [clientId])
+  const [move, setMove] = useState<{ session: Session; start: Date; end: Date; resolve: (ok: boolean) => void } | null>(null)
+  const [notify, setNotify] = useState(true)
+  const [moving, setMoving] = useState(false)
   const clients = useApi<ClientRow[]>(role === 'COACH' && !clientId ? '/coach/clients' : null)
-  const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming')
   const [editing, setEditing] = useState<{ session?: Session } | null>(null)
-  const [q, setQ] = useState('')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const navigate = useNavigate()
-
-  const list = useMemo(() => {
-    const now = Date.now() - 3_600_000
-    const s = (data ?? []).filter((x) => (tab === 'upcoming' ? x.status === 'SCHEDULED' && new Date(x.scheduledAt).getTime() >= now : x.status !== 'SCHEDULED' || new Date(x.scheduledAt).getTime() < now))
-    const f = s.filter((x) => !q || `${x.topic} ${x.summary} ${x.topics.join(' ')} ${x.client?.user.name}`.toLowerCase().includes(q.toLowerCase()))
-    return tab === 'upcoming' ? f.sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt)) : f
-  }, [data, tab, q])
+  const showClient = role === 'COACH' && !clientId
+  const sessions = useMemo(() => data ?? [], [data])
+  // Look the session up by id so the details stay current after "Record outcome" refreshes the data.
+  const selected = sessions.find((s) => s.id === selectedId) ?? null
+  const calendarSkeleton = <Skeleton className="h-[680px] w-full rounded-xl" />
 
   return (
     <div className="grid gap-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <Segmented value={tab} onChange={setTab} options={[{ value: 'upcoming', label: 'Upcoming' }, { value: 'past', label: 'History' }]} />
-        <Input placeholder="Search sessions…" value={q} onChange={(e) => setQ(e.target.value)} className="sm:max-w-xs" />
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
+          {(Object.keys(STATUS_LABEL) as Session['status'][]).map((k) => (
+            <span key={k} className="flex items-center gap-1.5">
+              <span className={`size-2 rounded-full ${STATUS_DOT[k]}`} /> {STATUS_LABEL[k]}
+            </span>
+          ))}
+          <span>· Click a session for details{role === 'COACH' ? '; drag an upcoming one to reschedule' : ''}</span>
+        </div>
         {role === 'COACH' ? (
           <Button className="sm:ml-auto" onClick={() => setEditing({})}>
             <Plus /> New session record
           </Button>
         ) : null}
       </div>
-      {loading && !data ? <SessionCardsSkeleton /> : null}
-      {data && !list.length ? <EmptyState icon={CalendarClock} title={tab === 'upcoming' ? 'No upcoming sessions' : 'No past sessions'} /> : null}
-      <div className="grid gap-3">
-        {list.map((s) => (
-          <Card key={s.id} className="p-0">
-            <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
-              <div className="flex w-16 shrink-0 flex-col items-center rounded-lg border bg-muted/40 py-1.5 text-center">
-                <span className="text-[11px] font-medium uppercase text-muted-foreground">{fmtDate(s.scheduledAt, { month: 'short' })}</span>
-                <span className="text-[20px] font-semibold leading-none">{fmtDate(s.scheduledAt, { day: 'numeric' })}</span>
-                <span className="text-[10.5px] text-muted-foreground">{fmtTime(s.scheduledAt)}</span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  {role === 'COACH' && !clientId && s.client ? (
-                    <span className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
-                      <Avatar name={s.client.user.name} color={s.client.user.avatarColor} size={18} /> {s.client.user.name}
-                    </span>
-                  ) : null}
-                  <Badge variant={s.status === 'COMPLETED' ? 'success' : s.status === 'SCHEDULED' ? 'ai' : 'outline'}>{s.status === 'COMPLETED' ? 'Completed' : s.status === 'SCHEDULED' ? 'Scheduled' : 'Cancelled'}</Badge>
-                  <span className="text-[12px] text-muted-foreground">{s.durationMin} min</span>
-                </div>
-                <div className="mt-1 text-[14px] font-semibold">{s.topic}</div>
-                {s.meetingLink ? (
-                  <a href={s.meetingLink} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex max-w-full items-center gap-1.5 text-[12.5px] text-ai hover:underline">
-                    <Video className="size-3.5 shrink-0" />
-                    <span className="truncate">{meetingHost(s.meetingLink)}</span>
-                    <ExternalLink className="size-3 shrink-0" />
-                  </a>
-                ) : null}
-                {s.summary ? <p className="mt-1 text-[13px] leading-relaxed text-foreground/80">{s.summary}</p> : null}
-                {s.topics.length ? (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {s.topics.map((t) => (
-                      <Badge key={t} variant="outline">
-                        {t}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : null}
-                {s.status === 'COMPLETED' ? (
-                  <div className="mt-3 grid gap-3 text-[12.5px] sm:grid-cols-3">
-                    {role === 'COACH' && s.observations ? (
-                      <div>
-                        <div className="font-medium text-muted-foreground">Observations (private)</div>
-                        <div>{s.observations}</div>
-                      </div>
-                    ) : null}
-                    {s.decisions.length ? (
-                      <div>
-                        <div className="font-medium text-muted-foreground">Decisions</div>
-                        <ul className="list-disc pl-4">{s.decisions.map((x) => <li key={x}>{x}</li>)}</ul>
-                      </div>
-                    ) : null}
-                    {s.followUps.length ? (
-                      <div>
-                        <div className="font-medium text-muted-foreground">Follow-ups</div>
-                        <ul className="list-disc pl-4">{s.followUps.map((x) => <li key={x}>{x}</li>)}</ul>
-                      </div>
-                    ) : null}
-                    {s.commitments?.length ? (
-                      <div>
-                        <div className="font-medium text-muted-foreground">New commitments</div>
-                        <ul className="list-disc pl-4">{s.commitments.map((x) => <li key={x.id}>{x.title}</li>)}</ul>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-              {role === 'COACH' ? (
-                <div className="flex shrink-0 gap-2 sm:flex-col">
-                  {s.status === 'SCHEDULED' ? (
-                    <Button size="sm" variant="ai" onClick={() => navigate(`/coach/sessions/${s.id}/prep`)}>
-                      <Sparkles /> AI brief <ChevronRight />
-                    </Button>
-                  ) : null}
-                  <Button size="sm" variant="outline" onClick={() => setEditing({ session: s })}>
-                    {s.status === 'SCHEDULED' ? 'Record outcome' : 'Edit'}
+
+      {loading && !data ? (
+        calendarSkeleton
+      ) : (
+        <Suspense fallback={calendarSkeleton}>
+          <SessionCalendar
+            sessions={sessions}
+            showClient={showClient}
+            onSelect={(s) => setSelectedId(s.id)}
+            onReschedule={role === 'COACH' ? (session, start, end) => new Promise<boolean>((resolve) => setMove({ session, start, end, resolve })) : undefined}
+          />
+        </Suspense>
+      )}
+
+      <Dialog open={!!selected} onOpenChange={(v) => !v && setSelectedId(null)}>
+        {selected ? (
+          <DialogContent>
+            <DialogHeader title={selected.topic} description={`${fmtDate(selected.scheduledAt, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} · ${fmtTime(selected.scheduledAt)}`} />
+            <DialogBody>
+              <SessionDetails s={selected} role={role} showClient={showClient} />
+            </DialogBody>
+            {role === 'COACH' ? (
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setEditing({ session: selected })
+                    setSelectedId(null)
+                  }}
+                >
+                  {selected.status === 'SCHEDULED' ? 'Record outcome' : 'Edit'}
+                </Button>
+                {selected.status === 'SCHEDULED' ? (
+                  <Button variant="ai" onClick={() => navigate(`/coach/sessions/${selected.id}/prep`)}>
+                    <Sparkles /> AI brief <ChevronRight />
                   </Button>
-                </div>
-              ) : null}
-            </div>
-          </Card>
-        ))}
-      </div>
+                ) : null}
+              </DialogFooter>
+            ) : null}
+          </DialogContent>
+        ) : null}
+      </Dialog>
+
+      <Dialog
+        open={!!move}
+        onOpenChange={(v) => {
+          if (!v && move && !moving) {
+            move.resolve(false)
+            setMove(null)
+          }
+        }}
+      >
+        {move ? (
+          <DialogContent>
+            <DialogHeader title="Reschedule this session?" description={move.session.topic} />
+            <DialogBody className="grid gap-3 text-[13px]">
+              <div className="grid grid-cols-[80px_1fr] gap-y-1.5">
+                <span className="text-muted-foreground">From</span>
+                <span className="text-muted-foreground line-through">
+                  {fmtDate(move.session.scheduledAt, { weekday: 'short', month: 'short', day: 'numeric' })} · {fmtTime(move.session.scheduledAt)} ({move.session.durationMin} min)
+                </span>
+                <span className="text-muted-foreground">To</span>
+                <span className="font-medium">
+                  {fmtDate(move.start, { weekday: 'short', month: 'short', day: 'numeric' })} · {fmtTime(move.start)} ({Math.round((move.end.getTime() - move.start.getTime()) / 60_000)} min) UTC
+                </span>
+              </div>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} />
+                Email {move.session.client?.user.name.split(' ')[0] ?? 'the client'} the new time
+              </label>
+            </DialogBody>
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                disabled={moving}
+                onClick={() => {
+                  move.resolve(false)
+                  setMove(null)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={moving}
+                onClick={async () => {
+                  setMoving(true)
+                  const durationMin = Math.max(15, Math.round((move.end.getTime() - move.start.getTime()) / 60_000))
+                  try {
+                    const r = await api<{ session: Session; emailed: boolean | null }>(`/sessions/${move.session.id}/reschedule`, { method: 'POST', json: { scheduledAt: move.start.toISOString(), durationMin, notify } })
+                    setData((xs) => (xs ?? []).map((x) => (x.id === move.session.id ? { ...x, scheduledAt: r.session.scheduledAt, durationMin: r.session.durationMin } : x)))
+                    toast.success(r.emailed === false ? 'Session moved (the email could not be sent)' : r.emailed ? 'Session moved and client emailed' : 'Session moved')
+                    move.resolve(true)
+                  } catch (e) {
+                    toast.error((e as Error).message)
+                    move.resolve(false)
+                  } finally {
+                    setMoving(false)
+                    setMove(null)
+                  }
+                }}
+              >
+                Move session
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        ) : null}
+      </Dialog>
+
       {role === 'COACH' ? (
         <SessionRecordDialog
           open={!!editing}
@@ -451,4 +522,3 @@ export function SessionsPanel({ clientId, role = 'COACH' }: { clientId?: string;
     </div>
   )
 }
-

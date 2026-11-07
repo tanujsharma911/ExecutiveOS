@@ -9,6 +9,7 @@ import ClientGrowth from '@/pages/client/Growth'
 import Reflections from '@/pages/client/Reflections'
 import ClientSessions from '@/pages/client/Sessions'
 import ClientWorkspace from '@/pages/coach/ClientWorkspace'
+import DiscoveryBook from '@/pages/coach/DiscoveryBook'
 import Clients from '@/pages/coach/Clients'
 import CoachCommitments from '@/pages/coach/Commitments'
 import FormEditor from '@/pages/coach/FormEditor'
@@ -16,8 +17,12 @@ import Forms from '@/pages/coach/Forms'
 import Intelligence from '@/pages/coach/Intelligence'
 import Overview from '@/pages/coach/Overview'
 import Programs from '@/pages/coach/Programs'
+import ProspectDetail from '@/pages/coach/ProspectDetail'
+import Prospects from '@/pages/coach/Prospects'
 import SessionPrep from '@/pages/coach/SessionPrep'
 import Sessions from '@/pages/coach/Sessions'
+import ChangePassword from '@/pages/ChangePassword'
+import Intake from '@/pages/Intake'
 import Login from '@/pages/Login'
 import SettingsPage from '@/pages/Settings'
 import { useAuth, type SessionUser } from '@/store/auth'
@@ -25,6 +30,7 @@ import { useAuth, type SessionUser } from '@/store/auth'
 function RequireRole({ role, children }: { role: 'COACH' | 'CLIENT'; children: React.ReactNode }) {
   const user = useAuth((s) => s.user)
   if (!user) return <Navigate to="/login" replace />
+  if (user.mustChangePassword) return <ChangePassword />
   if (user.role !== role) return <Navigate to={user.role === 'COACH' ? '/coach' : '/client'} replace />
   return <>{children}</>
 }
@@ -51,6 +57,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/intake/:token" element={<Intake />} />
       <Route path="/" element={<Home />} />
       <Route
         path="/coach"
@@ -63,6 +70,10 @@ export default function App() {
         <Route index element={<Overview />} />
         <Route path="clients" element={<Clients />} />
         <Route path="clients/:id" element={<ClientWorkspace />} />
+        <Route path="prospects" element={<Prospects />} />
+        <Route path="prospects/:id" element={<ProspectDetail />} />
+        <Route path="book" element={<DiscoveryBook />} />
+        <Route path="books/*" element={<Navigate to="/coach/book" replace />} />
         <Route path="programs" element={<Programs />} />
         <Route path="forms" element={<Forms />} />
         <Route path="forms/new" element={<FormEditor />} />

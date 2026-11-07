@@ -3,18 +3,34 @@ import { LayoutGrid, Rows3, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Sparkline } from '@/components/common/Charts'
-import { DataGrid } from '@/components/common/DataGrid'
+import { DataGrid, type DetailConfig } from '@/components/common/DataGrid'
 import { ErrorState, PageHeader } from '@/components/common/Page'
 import { EngagementBadge } from '@/components/common/Status'
+import { BillingBadge } from '@/components/features/Billing'
 import { Card } from '@/components/ui/card'
 import { Input, NativeSelect } from '@/components/ui/input'
 import { Avatar, Progress, Skeleton } from '@/components/ui/misc'
 import { Segmented } from '@/components/ui/tabs'
-import { useApi } from '@/lib/api'
+import { api, useApi } from '@/lib/api'
 import type { ClientRow } from '@/lib/types'
 import { fmtDate, relative } from '@/lib/utils'
 
 const SKELETON_ROWS = 3
+
+const BILLING_LABEL: Record<string, string> = { ACTIVE: 'Auto-renew on', PAST_DUE: 'Payment failed', SUSPENDED: 'Paused', CANCELLED: 'Cancelled', EXPIRED: 'Ended', 'One-time': 'One-time' }
+const ITEM_STATUS: Record<string, string> = { NOT_STARTED: 'Not started', IN_PROGRESS: 'In progress', PARTIALLY_COMPLETED: 'Partly done', BLOCKED: 'Blocked', SUBMITTED: 'Submitted' }
+
+/** Expanded row: open commitments and the latest reflections (AG Grid master/detail). Module-level so it stays stable. */
+const CLIENT_DETAIL: DetailConfig<ClientRow> = {
+  load: (row) => api<unknown[]>(`/coach/clients/${row.id}/recent`),
+  empty: 'No open commitments or reflections yet.',
+  columns: [
+    { headerName: 'Type', field: 'type', maxWidth: 140 },
+    { headerName: 'Item', field: 'title', flex: 2.5 },
+    { headerName: 'Date', field: 'date', maxWidth: 170, valueFormatter: (p) => (p.value ? `${p.data?.type === 'Commitment' ? 'Due ' : ''}${fmtDate(p.value, { month: 'short', day: 'numeric', year: 'numeric' })}` : '') },
+    { headerName: 'Status', field: 'status', maxWidth: 160, valueFormatter: (p) => ITEM_STATUS[p.value as string] ?? p.value },
+  ],
+}
 
 /** Mirrors the AG Grid table (header + rows) so nothing jumps when data arrives. */
 function TableSkeleton() {
@@ -108,12 +124,27 @@ export default function Clients() {
       ),
     },
     { headerName: 'Company', valueGetter: (p) => `${p.data?.designation}, ${p.data?.company}`, minWidth: 220, flex: 1.2 },
-    { headerName: 'Program', field: 'program', minWidth: 180 },
+    { headerName: 'Program', field: 'program', minWidth: 180, enableRowGroup: true },
     { headerName: 'Started', field: 'startDate', minWidth: 110, valueFormatter: (p) => fmtDate(p.value) },
-    { headerName: 'Engagement', field: 'engagement', minWidth: 120, cellRenderer: (p: { value: ClientRow['engagement'] }) => <div className="flex h-full items-center"><EngagementBadge status={p.value} /></div> },
+    {
+      headerName: 'Billing',
+      field: 'billing',
+      minWidth: 150,
+      enableRowGroup: true,
+      valueGetter: (p) => (p.data?.billing ? p.data.billing.status : 'One-time'),
+      valueFormatter: (p) => BILLING_LABEL[p.value as string] ?? p.value,
+      cellRenderer: (p: { data: ClientRow }) => (
+        <div className="flex h-full items-center gap-1.5">
+          {p.data.billing ? <BillingBadge status={p.data.billing.status} failed={p.data.billing.failedPayments} /> : <span className="text-[12.5px] text-muted-foreground">One-time</span>}
+        </div>
+      ),
+    },
+    { headerName: 'Engagement', field: 'engagement', minWidth: 120, enableRowGroup: true, cellRenderer: (p: { value: ClientRow['engagement'] }) => <div className="flex h-full items-center"><EngagementBadge status={p.value} /></div> },
     { headerName: 'Last reflection', field: 'lastReflectionAt', minWidth: 130, valueFormatter: (p) => relative(p.value) },
     {
       headerName: 'Confidence',
+      aggFunc: 'avg',
+      valueFormatter: (p) => (p.value == null ? '—' : String(Math.round(Number(p.value) * 10) / 10)),
       field: 'confidence',
       minWidth: 140,
       cellRenderer: (p: { data: ClientRow }) => (
@@ -123,7 +154,7 @@ export default function Clients() {
         </div>
       ),
     },
-    { headerName: 'Open commitments', field: 'openCommitments', minWidth: 130, type: 'numericColumn' },
+    { headerName: 'Open commitments', field: 'openCommitments', minWidth: 130, type: 'numericColumn', aggFunc: 'sum' },
   ]
 
   return (
@@ -158,7 +189,7 @@ export default function Clients() {
       </div>
       {loading && !data ? view === 'table' ? <TableSkeleton /> : <CardsSkeleton /> : null}
       {error ? <ErrorState message={error} /> : null}
-      {data && view === 'table' ? <DataGrid rows={rows} columns={columns} quickFilter={q} autoHeight movableColumns onRowClick={(r) => navigate(`/coach/clients/${r.id}`)} /> : null}
+      {data && view === 'table' ? <DataGrid rows={rows} columns={columns} quickFilter={q} autoHeight movableColumns groupable exportName="clients" detail={CLIENT_DETAIL} onRowClick={(r) => navigate(`/coach/clients/${r.id}`)} /> : null}
       {data && view === 'cards' ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((c) => (

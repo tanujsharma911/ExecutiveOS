@@ -2,6 +2,8 @@ import { ExternalLink, KeyRound, Link2, MapPin, Phone, Plus, Save, Sparkles, Tra
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/common/Page'
+import { ClientBillingCard } from '@/components/features/Billing'
+import { IntakeLinkCard, PaymentPoliciesCard } from '@/components/features/Prospects'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input, Label } from '@/components/ui/input'
@@ -209,6 +211,7 @@ export default function SettingsPage() {
             </Button>
           </CardContent>
         </Card>
+        {user.role === 'CLIENT' ? <ClientBillingCard /> : null}
         {user.role === 'CLIENT' ? <ContactAndLinks /> : null}
         <Card>
           <CardHeader>
@@ -243,6 +246,8 @@ export default function SettingsPage() {
             </Button>
           </CardContent>
         </Card>
+        {user.role === 'COACH' ? <IntakeLinkCard /> : null}
+        {user.role === 'COACH' ? <PaymentPoliciesCard /> : null}
         {user.role === 'COACH' ? (
           <Card>
             <CardHeader>
@@ -263,7 +268,7 @@ export default function SettingsPage() {
                 <span className="font-mono text-[12px]">{ai?.model}</span>
               </div>
               <p className="text-[12.5px] text-muted-foreground">
-                Insights are always computed by evidence-grounded LangChain tools over your clients' own words. In live mode, Gemini orchestrates the tools and writes the briefing narrative, with Groq as an automatic fallback. Payments are not part of this phase.
+                Insights are always computed by evidence-grounded LangChain tools over your clients' own words. In live mode, Gemini orchestrates the tools and writes the briefing narrative, with Groq as an automatic fallback.
               </p>
             </CardContent>
           </Card>

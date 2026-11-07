@@ -8,6 +8,7 @@ import { invalidateReport } from '../ai/intelligence.js'
 import { detectThemes } from '../ai/lexicon.js'
 import { assertCoachOwnsClient, HttpError, requireRole } from '../auth.js'
 import { prisma } from '../db.js'
+import { escapeHtml, layout, sendEmail } from '../lib/email.js'
 
 export const work = Router()
 
@@ -175,6 +176,34 @@ work.patch('/sessions/:id', requireRole('COACH'), async (req, res) => {
   const s = await ownSession(req, String(req.params.id))
   const body = SessionFields.partial().omit({ clientId: true }).parse(req.body)
   res.json(await prisma.session.update({ where: { id: s.id }, data: body }))
+})
+
+/** Drag-to-reschedule from the coach's Session Calendar. Only upcoming, scheduled sessions can move. */
+work.post('/sessions/:id/reschedule', requireRole('COACH'), async (req, res) => {
+  const s = await ownSession(req, String(req.params.id))
+  const body = z.object({ scheduledAt: z.coerce.date(), durationMin: z.number().int().min(15).max(480), notify: z.boolean().default(false) }).parse(req.body)
+  if (s.status !== 'SCHEDULED') throw new HttpError(400, 'Only scheduled sessions can be moved')
+  if (body.scheduledAt.getTime() < Date.now() - 60_000) throw new HttpError(400, 'Pick a time in the future')
+  const updated = await prisma.session.update({ where: { id: s.id }, data: { scheduledAt: body.scheduledAt, durationMin: body.durationMin } })
+  let emailed: boolean | null = null
+  if (body.notify) {
+    const [client, coach] = await Promise.all([
+      prisma.clientProfile.findUniqueOrThrow({ where: { id: s.clientId }, select: { user: { select: { id: true, name: true, email: true } } } }),
+      prisma.user.findUniqueOrThrow({ where: { id: req.user!.id }, select: { name: true, email: true } }),
+    ])
+    const when = body.scheduledAt.toLocaleString('en-US', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' UTC'
+    const text = `${coach.name} moved your session “${s.topic}” to ${when} (${body.durationMin} min).`
+    await prisma.notification.create({ data: { userId: client.user.id, title: 'Session rescheduled', body: text, link: '/client/sessions', kind: 'info' } })
+    const mail = await sendEmail({
+      to: client.user.email,
+      replyTo: coach.email,
+      subject: `Session moved: ${when}`,
+      text: `Hi ${client.user.name},\n\n${text}${s.meetingLink ? `\n\nJoin: ${s.meetingLink}` : ''}\n\n— ${coach.name}`,
+      html: layout({ heading: 'Your session has moved', paragraphs: [`Hi ${escapeHtml(client.user.name)},`, escapeHtml(text)], ...(s.meetingLink ? { button: { label: 'Join the session', url: s.meetingLink } } : {}), footer: `Reply to this email to reach ${escapeHtml(coach.name)}.` }),
+    })
+    emailed = mail.sent
+  }
+  res.json({ session: updated, emailed })
 })
 
 work.get('/sessions/:id/brief', requireRole('COACH'), async (req, res) => {

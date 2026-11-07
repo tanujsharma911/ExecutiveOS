@@ -89,6 +89,9 @@ export interface ClientRow {
   program: string
   programId: string | null
   startDate: string
+  /** false: auto-renewal failed after PayPal's retries (read-only) */
+  active: boolean
+  billing: { status: 'ACTIVE' | 'PAST_DUE' | 'SUSPENDED' | 'CANCELLED' | 'EXPIRED'; nextBillingAt: string | null; failedPayments: number } | null
   lastReflectionAt: string | null
   lastWeeklyAt: string | null
   engagement: 'Active' | 'Slipping' | 'At risk'

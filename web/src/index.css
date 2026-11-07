@@ -96,3 +96,29 @@
 .ag-theme-exec { --ag-font-family: var(--font-sans); }
 .ag-cell-wrap-text { word-break: break-word; }
 .ag-cell > div, .ag-cell .ag-cell-value > div { line-height: 1.35; }
+
+/* Rich-text editor (TipTap) — Discovery Call Book */
+.rte { outline: none; font-size: 14.5px; line-height: 1.65; color: var(--foreground); min-height: 60vh; }
+.rte > * + * { margin-top: 0.55em; }
+.rte h2 { font-size: 18px; font-weight: 650; letter-spacing: -0.01em; margin-top: 1.4em; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.rte h2:first-child { margin-top: 0; }
+.rte h3 { font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-foreground); margin-top: 1em; }
+.rte ul, .rte ol { padding-left: 1.35em; }
+.rte ul { list-style: disc; }
+.rte ol { list-style: decimal; }
+.rte li + li { margin-top: 0.2em; }
+.rte li > p { margin: 0; }
+.rte a { color: var(--ai); text-decoration: underline; text-underline-offset: 2px; }
+.rte blockquote { border-left: 3px solid var(--border); padding-left: 12px; color: var(--muted-foreground); }
+.rte ul[data-type="taskList"] { list-style: none; padding-left: 0.1em; }
+.rte ul[data-type="taskList"] li { display: flex; gap: 8px; align-items: flex-start; }
+.rte ul[data-type="taskList"] li > label { margin-top: 0.3em; user-select: none; }
+.rte ul[data-type="taskList"] li > div { flex: 1; }
+.rte ul[data-type="taskList"] li[data-checked="true"] > div { color: var(--danger); }
+.rte p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--muted-foreground); opacity: 0.7; float: left; height: 0; pointer-events: none; }
+.rte-preview h2 { font-size: 14px; font-weight: 650; margin: 10px 0 4px; }
+.rte-preview h3 { font-size: 11px; font-weight: 650; text-transform: uppercase; color: var(--muted-foreground); margin: 8px 0 2px; }
+.rte-preview ul, .rte-preview ol { padding-left: 1.2em; list-style: disc; }
+.rte-preview ol { list-style: decimal; }
+.rte-preview p { margin: 4px 0; }
+.rte-preview li > p { margin: 0; }

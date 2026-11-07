@@ -1,6 +1,7 @@
 import {
   Bell,
   BookOpenCheck,
+  BookOpenText,
   BrainCircuit,
   CalendarClock,
   CalendarDays,
@@ -15,11 +16,13 @@ import {
   Settings,
   Sparkles,
   SquarePen,
+  UserPlus,
   Users,
   X,
 } from 'lucide-react'
 import * as React from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { ClientBillingBanner } from '@/components/features/Billing'
 import { Avatar, Popover, PopoverContent, PopoverTrigger, Tooltip } from '@/components/ui/misc'
 import { api, useApi } from '@/lib/api'
 import type { Notification } from '@/lib/types'
@@ -29,12 +32,14 @@ import { useUi } from '@/store/ui'
 
 const COACH_NAV = [
   { to: '/coach', label: 'Overview', icon: LayoutDashboard, end: true },
+  { to: '/coach/prospects', label: 'Prospects', icon: UserPlus },
+  { to: '/coach/book', label: 'Discovery Call Book', icon: BookOpenText },
   { to: '/coach/clients', label: 'My Clients', icon: Users },
   { to: '/coach/programs', label: 'Coaching Programs', icon: BookOpenCheck },
   { to: '/coach/forms', label: 'Form Builder', icon: SquarePen },
-  { to: '/coach/intelligence', label: 'AI Intelligence', icon: BrainCircuit, ai: true },
+  { to: '/coach/intelligence', label: 'Report Cards', icon: BrainCircuit, ai: true },
   { to: '/coach/commitments', label: 'Commitments', icon: ListChecks },
-  { to: '/coach/sessions', label: 'Session History', icon: CalendarClock },
+  { to: '/coach/sessions', label: 'Session Calendar', icon: CalendarClock },
   { to: '/coach/settings', label: 'Settings', icon: Settings },
 ]
 
@@ -45,7 +50,7 @@ const CLIENT_NAV = [
   { to: '/client/reflections/monthly', label: 'Monthly Review', icon: CalendarRange },
   { to: '/client/commitments', label: 'My Commitments', icon: ClipboardList },
   { to: '/client/growth', label: 'My Growth Journey', icon: Route },
-  { to: '/client/sessions', label: 'Session History', icon: CalendarClock },
+  { to: '/client/sessions', label: 'Session Calendar', icon: CalendarClock },
   { to: '/client/settings', label: 'Settings', icon: Settings },
 ]
 
@@ -207,6 +212,7 @@ export function AppShell() {
           </div>
         </header>
         <main className="mx-auto w-full max-w-[1180px] px-4 py-6 md:px-8 md:py-8">
+          {user.role === 'CLIENT' ? <ClientBillingBanner /> : null}
           <Outlet />
         </main>
       </div>

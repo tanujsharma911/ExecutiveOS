@@ -7,6 +7,7 @@ import { getCorpus } from '../ai/corpus.js'
 import { runAnalysis, runIntelligence, tryRunIntelligence } from '../ai/intelligence.js'
 import { AiUnavailableError } from '../ai/model.js'
 import { assertCoachOwnsClient, HttpError, requireRole } from '../auth.js'
+import { paypalEnv } from '../lib/paypal.js'
 import { prisma } from '../db.js'
 import { growthJourney, reflectionActivity } from '../lib/growth.js'
 import { addDays, startOfWeek } from '../lib/periods.js'
@@ -25,7 +26,7 @@ coach.use(requireRole('COACH'))
 async function clientRows(coachId: string) {
   const clients = await prisma.clientProfile.findMany({
     where: { coachId },
-    include: { user: true, program: true, commitments: { select: { status: true, dueDate: true } } },
+    include: { user: true, program: true, subscription: { select: { status: true, nextBillingAt: true, failedPayments: true } }, commitments: { select: { status: true, dueDate: true } } },
     orderBy: { user: { name: 'asc' } },
   })
   return Promise.all(
@@ -47,6 +48,8 @@ async function clientRows(coachId: string) {
         program: c.program?.name ?? '—',
         programId: c.programId,
         startDate: c.startDate,
+        active: c.active,
+        billing: c.subscription ? { status: c.subscription.status, nextBillingAt: c.subscription.nextBillingAt, failedPayments: c.subscription.failedPayments } : null,
         lastReflectionAt: corpus.submissions[corpus.submissions.length - 1]?.date ?? null,
         lastWeeklyAt: corpus.lastWeeklyAt,
         engagement: eng.status,
@@ -147,6 +150,20 @@ coach.get('/clients', async (req, res) => {
   res.json(await clientRows(req.user!.id))
 })
 
+/** Light rows for the expandable detail in My Clients: latest reflections and open commitments. */
+coach.get('/clients/:id/recent', async (req, res) => {
+  const id = String(req.params.id)
+  await assertCoachOwnsClient(req.user!.id, id)
+  const [reflections, commitments] = await Promise.all([
+    prisma.submission.findMany({ where: { clientId: id, status: 'SUBMITTED' }, orderBy: { submittedAt: 'desc' }, take: 4, select: { id: true, submittedAt: true, form: { select: { title: true } } } }),
+    prisma.commitment.findMany({ where: { clientId: id, status: { not: 'COMPLETED' } }, orderBy: { dueDate: 'asc' }, take: 6, select: { id: true, title: true, dueDate: true, status: true } }),
+  ])
+  res.json([
+    ...commitments.map((c) => ({ id: c.id, type: 'Commitment', title: c.title, date: c.dueDate, status: c.status })),
+    ...reflections.map((r) => ({ id: r.id, type: 'Reflection', title: r.form.title, date: r.submittedAt, status: 'SUBMITTED' })),
+  ])
+})
+
 coach.get('/clients/:id', async (req, res) => {
   const id = req.params.id
   await assertCoachOwnsClient(req.user!.id, id)
@@ -157,6 +174,7 @@ coach.get('/clients/:id', async (req, res) => {
       program: true,
       commitments: { orderBy: { dueDate: 'asc' }, include: { updates: { orderBy: { createdAt: 'desc' }, take: 1 } } },
       sessions: { orderBy: { scheduledAt: 'desc' } },
+      subscription: true,
     },
   })
   // No LLM here: the AI summary is fetched separately (/intelligence) so this page loads instantly.
@@ -176,6 +194,7 @@ coach.get('/clients/:id', async (req, res) => {
     .slice(0, 10)
   res.json({
     profile: c,
+    paypalEnv: paypalEnv(),
     engagement: engagementOf(corpus.lastWeeklyAt),
     // Charts are the client's raw self-reported numbers; patterns come from the analysis tools — neither needs the LLM.
     series: (['confidence', 'team', 'energy', 'stress', 'goalProgress'] as const).map((k) => buildSeries(corpus.metrics, k)),
@@ -239,15 +258,35 @@ coach.get('/programs', async (req, res) => {
   res.json(programs)
 })
 
-const ProgramBody = z.object({ name: z.string().min(2), description: z.string().default(''), durationWeeks: z.number().int().min(1).max(104), focusAreas: z.array(z.string()).default([]) })
+const ProgramFields = z.object({
+  name: z.string().min(2),
+  description: z.string(),
+  durationWeeks: z.number().int().min(1).max(104),
+  focusAreas: z.array(z.string()),
+  /** What's included (sessions, access, extras); the intake assistant quotes it. */
+  included: z.string().max(1000),
+  /** Fixed USD price in cents; 0 hides the program from the intake form. */
+  priceCents: z.number().int().min(0).max(10_000_000),
+  /** SUBSCRIPTION: PayPal charges priceCents again every durationWeeks (PayPal allows at most 52 weeks per cycle). */
+  billingType: z.enum(['ONE_TIME', 'SUBSCRIPTION']),
+})
+const checkTerm = (b: { billingType?: string; durationWeeks?: number }, current?: { billingType: string; durationWeeks: number }) => {
+  const type = b.billingType ?? current?.billingType
+  const weeks = b.durationWeeks ?? current?.durationWeeks ?? 0
+  if (type === 'SUBSCRIPTION' && weeks > 52) throw new HttpError(400, 'Auto-renewing programs can be at most 52 weeks long (a PayPal limit)')
+}
+const ProgramBody = ProgramFields.extend({ included: z.string().max(1000).default(''), description: z.string().default(''), focusAreas: z.array(z.string()).default([]), priceCents: ProgramFields.shape.priceCents.default(0), billingType: ProgramFields.shape.billingType.default('ONE_TIME') })
 coach.post('/programs', async (req, res) => {
   const body = ProgramBody.parse(req.body)
+  checkTerm(body)
   res.status(201).json(await prisma.program.create({ data: { ...body, coachId: req.user!.id } }))
 })
 coach.patch('/programs/:id', async (req, res) => {
   const p = await prisma.program.findFirst({ where: { id: req.params.id, coachId: req.user!.id } })
   if (!p) throw new HttpError(404, 'Program not found')
-  res.json(await prisma.program.update({ where: { id: p.id }, data: ProgramBody.partial().extend({ status: z.string().optional() }).parse(req.body) }))
+  const body = ProgramFields.partial().extend({ status: z.string().max(20).optional() }).parse(req.body)
+  checkTerm(body, p)
+  res.json(await prisma.program.update({ where: { id: p.id }, data: body }))
 })
 
 // Adaptive form suggestions

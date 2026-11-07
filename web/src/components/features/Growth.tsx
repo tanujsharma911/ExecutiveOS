@@ -1,5 +1,5 @@
 import { Flag, GitBranch, MessagesSquare, Repeat, Sparkles, Trophy } from 'lucide-react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { AgAreaTrend } from '@/components/common/AgLineChart'
 import { SectionTitle } from '@/components/common/Page'
 import { Badge } from '@/components/ui/badge'
@@ -65,16 +65,19 @@ function ListSkeleton({ rows = 5 }: { rows?: number }) {
  * Growth journey. Streak + heat map come from the fast `activityPath` and appear first;
  * the AI-backed sections show skeletons until `path` resolves.
  */
-export function GrowthView({ path, activityPath }: { path: string; activityPath: string }) {
+/** `banner` replaces the default note at the top (the client's page shows their program there). */
+export function GrowthView({ path, activityPath, banner }: { path: string; activityPath: string; banner?: ReactNode }) {
   const { data } = useApi<Growth>(path, [path])
   const activity = useApi<Activity>(activityPath, [activityPath])
   const [filter, setFilter] = useState<'all' | keyof typeof TIMELINE_META>('all')
 
   return (
     <div className="grid gap-7">
-      <div className="flex items-start gap-2 rounded-lg border border-dashed px-4 py-2.5 text-[12px] text-muted-foreground">
-        <Flag className="mt-0.5 size-3.5 shrink-0" /> {DISCLAIMER}
-      </div>
+      {banner ?? (
+        <div className="flex items-start gap-2 rounded-lg border border-dashed px-4 py-2.5 text-[12px] text-muted-foreground">
+          <Flag className="mt-0.5 size-3.5 shrink-0" /> {DISCLAIMER}
+        </div>
+      )}
 
       <section>
         <SectionTitle>Consistency</SectionTitle>

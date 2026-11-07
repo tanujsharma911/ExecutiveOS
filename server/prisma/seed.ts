@@ -2,12 +2,19 @@ import bcrypt from 'bcryptjs'
 import { prisma } from '../src/db.js'
 import { addDays, startOfDay, startOfMonth, startOfWeek, DAY_MS } from '../src/lib/periods.js'
 import { DAILY_CHECKIN, MONTHLY_REVIEW, WEEKLY_REFLECTION, type QuestionTemplate } from '../src/lib/formTemplates.js'
-import { CLIENTS, COACH, PROGRAMS } from './seed-data.js'
+import { sectionsToDoc, type BookContent } from '../src/ai/discoveryBook.js'
+import { CLIENTS, COACH, INTAKE_TOKEN, PROGRAMS, PROSPECTS, SEED_BOOK } from './seed-data.js'
 
 const COACH_PASSWORD = process.env.SEED_COACH_PASSWORD ?? 'Coach@2026'
 const CLIENT_PASSWORD = process.env.SEED_CLIENT_PASSWORD ?? 'Client@2026'
 
 async function reset() {
+  await prisma.subscription.deleteMany()
+  await prisma.intakePayment.deleteMany()
+  await prisma.discoveryCall.deleteMany()
+  await prisma.prospectBook.deleteMany()
+  await prisma.discoveryBook.deleteMany()
+  await prisma.prospect.deleteMany()
   await prisma.notification.deleteMany()
   await prisma.formSuggestion.deleteMany()
   await prisma.insightFeedback.deleteMany()
@@ -74,13 +81,15 @@ async function main() {
       title: COACH.title,
       avatarColor: COACH.avatarColor,
       passwordHash: await bcrypt.hash(COACH_PASSWORD, 10),
+      intakeToken: INTAKE_TOKEN,
+      refundPolicy: 'There are no refunds: all payments are final.',
     },
   })
 
   const programs = new Map<string, string>()
   for (const p of PROGRAMS) {
     const created = await prisma.program.create({
-      data: { coachId: coach.id, name: p.name, description: p.description, durationWeeks: p.durationWeeks, focusAreas: p.focusAreas },
+      data: { coachId: coach.id, name: p.name, description: p.description, durationWeeks: p.durationWeeks, focusAreas: p.focusAreas, included: p.included, priceCents: p.priceCents, billingType: 'billingType' in p ? p.billingType : 'ONE_TIME' },
     })
     programs.set(p.key, created.id)
   }
@@ -240,6 +249,44 @@ async function main() {
     }
   }
 
+  // Discovery pipeline: prospects at each stage, one Discovery Call Framework Book and its calls.
+  const prospectIds = new Map<string, string>()
+  for (const { key, daysAgo, ...p } of PROSPECTS) {
+    const created = await prisma.prospect.create({ data: { ...p, coachId: coach.id, createdAt: new Date(now.getTime() - daysAgo * DAY_MS) } })
+    prospectIds.set(key, created.id)
+  }
+  const book = await prisma.discoveryBook.create({ data: { coachId: coach.id, title: SEED_BOOK.title, prompt: SEED_BOOK.prompt, content: sectionsToDoc(SEED_BOOK.content as BookContent) as object, model: 'seed' } })
+  const fitSignals = SEED_BOOK.content.sections.find((s) => s.key === 'fit')!.items.map((i) => ({ label: i.text, flagged: false }))
+  await prisma.prospectBook.create({ data: { prospectId: prospectIds.get('marcus')!, bookId: book.id } })
+  await prisma.discoveryCall.create({
+    data: {
+      prospectId: prospectIds.get('marcus')!,
+      scheduledAt: new Date(today.getTime() - 5 * DAY_MS + 15 * 3_600_000),
+      durationMin: 45,
+      mode: 'ONLINE',
+      meetingLink: 'https://meet.google.com/abc-defg-hij',
+      notes: 'Margins slip on change orders. His site lead Dana already runs two projects alone. Wants to talk it over with his daughter before committing.',
+      fitCheck: fitSignals,
+      outcome: 'UNDECIDED',
+    },
+  })
+  await prisma.discoveryCall.create({
+    data: { prospectId: prospectIds.get('marcus')!, scheduledAt: new Date(today.getTime() + 2 * DAY_MS + 16 * 3_600_000), durationMin: 30, mode: 'OFFLINE', fitCheck: fitSignals },
+  })
+  await prisma.discoveryCall.create({
+    data: {
+      prospectId: prospectIds.get('sofia')!,
+      scheduledAt: new Date(today.getTime() - 15 * DAY_MS + 14 * 3_600_000),
+      mode: 'ONLINE',
+      notes: 'Wants staff turnover fixed in a month. Not interested in working on her own leadership.',
+      fitCheck: fitSignals.map((f, i) => ({ ...f, flagged: i < 2 })),
+      outcome: 'NOT_A_FIT',
+    },
+  })
+  await prisma.discoveryCall.create({
+    data: { prospectId: prospectIds.get('james')!, scheduledAt: new Date(today.getTime() - 6 * DAY_MS + 17 * 3_600_000), mode: 'ONLINE', notes: 'Clear goals, CEO sponsorship, ready to start. Sent the intake form.', fitCheck: fitSignals, outcome: 'GOOD_FIT' },
+  })
+
   await prisma.notification.create({
     data: {
       userId: coach.id,
@@ -252,6 +299,7 @@ async function main() {
 
   console.log('Seed complete.')
   console.log(`  Coach:   ${COACH.email} / ${COACH_PASSWORD}`)
+  console.log(`  Intake:  /intake/${INTAKE_TOKEN}`)
   for (const c of CLIENTS) console.log(`  Client:  ${c.email} / ${CLIENT_PASSWORD}`)
 }
 

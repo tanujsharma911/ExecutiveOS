@@ -4,6 +4,8 @@ import { invalidateCorpus, getCorpus } from '../ai/corpus.js'
 import { invalidateReport, tryRunIntelligence } from '../ai/intelligence.js'
 import { HttpError, requireRole } from '../auth.js'
 import { prisma } from '../db.js'
+import { PAYMENT_FAILURE_THRESHOLD } from '../lib/paypal.js'
+import { paypalAutopayUrl } from '../lib/subscriptions.js'
 import { createLogger } from '../lib/logger.js'
 import { dailyStreak, growthJourney, reflectionActivity, weeklyStreak } from '../lib/growth.js'
 import { currentPeriod } from '../lib/periods.js'
@@ -169,6 +171,18 @@ const profileInclude = { program: true, coach: { select: { name: true, title: tr
 
 client.get('/profile', async (req, res) => {
   res.json(await prisma.clientProfile.findUniqueOrThrow({ where: { id: req.user!.clientId! }, include: profileInclude }))
+})
+
+/** The client's auto-renewal (null for one-time programs) and whether they're paused. */
+client.get('/subscription', async (req, res) => {
+  const c = await prisma.clientProfile.findUniqueOrThrow({ where: { id: req.user!.clientId! }, select: { active: true, inactiveReason: true, subscription: { include: { program: { select: { name: true } } } } } })
+  const s = c.subscription
+  res.json({
+    active: c.active,
+    inactiveReason: c.inactiveReason,
+    manageUrl: paypalAutopayUrl(),
+    subscription: s ? { status: s.status, program: s.program.name, amountCents: s.amountCents, intervalWeeks: s.intervalWeeks, nextBillingAt: s.nextBillingAt, lastPaymentAt: s.lastPaymentAt, failedPayments: s.failedPayments, maxFailures: PAYMENT_FAILURE_THRESHOLD } : null,
+  })
 })
 
 const ProfileLink = z.object({

@@ -171,7 +171,7 @@ export default function Overview() {
           </p>
         </div>
         <Button variant="ai" onClick={() => navigate('/coach/intelligence')}>
-          <BrainCircuit /> Open AI Intelligence
+          <BrainCircuit /> Open Report Cards
         </Button>
       </div>
 
@@ -189,7 +189,7 @@ export default function Overview() {
 
       <div className="grid items-start gap-6 lg:grid-cols-2">
           <section>
-            <SectionTitle right={<Link to="/coach/sessions" className="text-[12.5px] text-muted-foreground hover:text-foreground">History →</Link>}>Upcoming sessions</SectionTitle>
+            <SectionTitle right={<Link to="/coach/sessions" className="text-[12.5px] text-muted-foreground hover:text-foreground">Calendar →</Link>}>Upcoming sessions</SectionTitle>
             <Card className="divide-y">
               {data.upcoming.map((s) => (
                 <button key={s.id} onClick={() => navigate(`/coach/sessions/${s.id}/prep`)} className="group flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/50 cursor-pointer first:rounded-t-xl last:rounded-b-xl">

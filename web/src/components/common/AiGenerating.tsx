@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 
 /**
- * Shown only where an LLM is still writing (e.g. the AI summary). A gently pulsing sparkle, a label that
+ * Shown only where an LLM is still writing (e.g. the Report Card summary). A gently pulsing sparkle, a label that
  * steps through what the assistant is doing, and shimmering lines where the text will appear.
  */
 export function AiGenerating({ steps = ['Reading the analysis', 'Connecting the patterns', 'Writing the summary'], lines = 3, className }: { steps?: string[]; lines?: number; className?: string }) {

@@ -99,7 +99,9 @@ export const PROGRAMS = [
     description:
       'A six-month program for founder-CEOs moving from doing to leading: decision rights, delegation and building an accountable leadership team.',
     durationWeeks: 26,
+    priceCents: 480_000,
     focusAreas: ['Delegation', 'Team ownership', 'Trust'],
+    included: 'Fortnightly 60-minute 1:1 sessions, weekly reflections with AI insights, a 360° leadership-team review at week 12, and email support between sessions.',
   },
   {
     key: 'scaling',
@@ -107,7 +109,9 @@ export const PROGRAMS = [
     description:
       'For founders whose companies have outgrown their operating model. Moves the CEO from operator to strategist and builds the leadership bench.',
     durationWeeks: 24,
+    priceCents: 420_000,
     focusAreas: ['Strategic thinking', 'Hiring leaders', 'Operating cadence'],
+    included: 'Weekly 60-minute 1:1 sessions for the first 8 weeks, then fortnightly; an operating-cadence workshop with your leadership team; weekly reflections with AI insights.',
   },
   {
     key: 'presence',
@@ -115,7 +119,10 @@ export const PROGRAMS = [
     description:
       'A focused program on communication, board relationships and the courage to have difficult conversations early.',
     durationWeeks: 16,
+    priceCents: 250_000,
+    billingType: 'SUBSCRIPTION' as const,
     focusAreas: ['Executive presence', 'Board communication', 'Difficult conversations'],
+    included: 'Fortnightly 60-minute 1:1 sessions, board-meeting preparation before each board meeting, daily check-ins and weekly reflections with AI insights.',
   },
 ]
 
@@ -303,3 +310,108 @@ export const CLIENTS: (SeedClient & { programKey: string })[] = [
 ]
 
 export const EMOTIONS = ['Motivated', 'Confident', 'Focused', 'Calm', 'Hopeful', 'Anxious', 'Frustrated', 'Overwhelmed', 'Tired', 'Grateful']
+
+// ── Prospects (discovery pipeline) ────────────────────────────────────────────
+
+export const INTAKE_TOKEN = 'elena-vasquez-intake'
+
+export const PROSPECTS = [
+  {
+    key: 'priya',
+    name: 'Priya Nair',
+    email: 'priya.nair@example.com',
+    company: 'Lumen Analytics',
+    role: 'Founder & CEO',
+    industry: 'B2B SaaS',
+    companySize: '45 employees',
+    location: 'Austin, TX',
+    phone: '+1 512 555 0144',
+    links: [{ label: 'Website', url: 'https://example.com/lumen' }],
+    notes: 'Referred by Sarah Chen. Growing fast, says she is "the bottleneck for every decision".',
+    status: 'NEW' as const,
+    daysAgo: 2,
+  },
+  {
+    key: 'marcus',
+    name: 'Marcus Webb',
+    email: 'marcus.webb@example.com',
+    company: 'Webb & Daughters Construction',
+    role: 'Owner',
+    industry: 'Construction',
+    companySize: '120 employees',
+    location: 'Denver, CO',
+    phone: '+1 303 555 0190',
+    links: [{ label: 'LinkedIn', url: 'https://www.linkedin.com/in/example-marcus' }],
+    notes: 'Second-generation family business. Wants to step back from daily operations within two years.',
+    status: 'IN_DISCUSSION' as const,
+    daysAgo: 12,
+  },
+  {
+    key: 'sofia',
+    name: 'Sofia Rossi',
+    email: 'sofia@example.com',
+    company: 'Rossi Boutique Hotels',
+    role: 'Managing Director',
+    industry: 'Hospitality',
+    companySize: '30 employees',
+    location: 'Miami, FL',
+    phone: null,
+    links: [],
+    notes: 'Came in through the website.',
+    status: 'NOT_A_FIT' as const,
+    notFitReason: 'Looking for a 4-week fix for staff turnover; not ready to work on her own leadership.',
+    daysAgo: 20,
+  },
+  {
+    key: 'james',
+    name: 'James Okafor',
+    email: 'james.okafor@example.com',
+    company: 'Northline Logistics',
+    role: 'COO',
+    industry: 'Logistics',
+    companySize: '300 employees',
+    location: 'Chicago, IL',
+    phone: '+1 312 555 0123',
+    links: [],
+    notes: 'Newly promoted COO; the CEO is sponsoring the coaching.',
+    status: 'INVITED' as const,
+    daysAgo: 9,
+  },
+]
+
+/** A Discovery Call Framework Book attached to Marcus. */
+export const SEED_BOOK = {
+  title: 'Discovery call: Marcus Webb, Webb & Daughters Construction',
+  prompt: 'Owner of a family construction firm who wants to step back from operations. Focus on succession and profit leaks.',
+  content: {
+    sections: [
+      { key: 'snapshot', title: 'Prospect snapshot', items: [{ text: 'Owner of Webb & Daughters Construction, second generation' }, { text: '120 employees, commercial and residential builds' }, { text: 'Based in Denver, CO' }, { text: 'Wants to step back from daily operations within two years' }] },
+      { key: 'online', title: 'What we found online', items: [] },
+      {
+        key: 'intro',
+        title: '1. Intro, rapport & frame',
+        items: [
+          { text: "Thanks for making time, Marcus. How's the season been on site so far?", group: 'Opener' },
+          { text: "I'd like to ask about the business and where it's heading, so I can see whether and how I can help.", group: 'Frame' },
+        ],
+      },
+      {
+        key: 'gathering',
+        title: '2. Info gathering',
+        items: [
+          { text: 'Which decisions still have to come to you, and what does waiting on you cost a project?', group: 'Pains' },
+          { text: 'Where are margins slipping between the quote and the final invoice?', group: 'Pains' },
+          { text: 'Tell me about the last time a site problem landed back on your desk. What happened?', group: 'Problems' },
+          { text: 'Who could run operations tomorrow, and what would they need first?', group: 'Problems' },
+          { text: 'What part of the business runs well without you today?', group: 'Highlights' },
+        ],
+      },
+      { key: 'transition', title: '3. Transition', items: [{ text: 'A short leadership assessment would show where stepping back frees the most profit. Shall we book it for next week?' }] },
+      {
+        key: 'fit',
+        title: 'Fit check (coach only)',
+        items: [{ text: 'Not willing to hand over real decisions' }, { text: 'Expects a quick fix in a few weeks' }, { text: 'Family dynamics block any change in roles' }],
+      },
+    ],
+  },
+}

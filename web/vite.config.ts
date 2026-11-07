@@ -9,6 +9,9 @@ export default defineConfig(({ mode }) => {
   const apiPort = env.PORT || '7461'
   return {
     plugins: [react(), tailwindcss()],
+    // Read VITE_* variables (e.g. VITE_BRYNTUM_LICENSE_KEY) from the same repo-root .env. Only VITE_-prefixed
+    // values are exposed to the browser, so server secrets like GOOGLE_API_KEY stay on the server.
+    envDir: path.resolve(__dirname, '..'),
     resolve: { alias: { '@': path.resolve(__dirname, './src') } },
     server: {
       port: Number(env.WEB_PORT || 7462),

@@ -238,6 +238,7 @@ export function CommitmentsPanel({ clientId }: { clientId?: string }) {
             headerName: 'Client',
             valueGetter: (p: { data?: Commitment }) => p.data?.client?.user.name,
             minWidth: 160,
+            enableRowGroup: true,
             cellRenderer: (p: { data: Commitment }) => (
               <div className="flex h-full items-center gap-2">
                 <Avatar name={p.data.client!.user.name} color={p.data.client!.user.avatarColor} size={22} /> {p.data.client!.user.name}
@@ -245,13 +246,14 @@ export function CommitmentsPanel({ clientId }: { clientId?: string }) {
             ),
           } as ColDef<Commitment>,
         ]),
-    { headerName: 'Status', field: 'status', minWidth: 170, cellRenderer: (p: { data: Commitment }) => <div className="flex h-full items-center"><CommitmentStatusBadge status={p.data.status} /></div> },
-    { headerName: 'Priority', field: 'priority', minWidth: 100, cellRenderer: (p: { data: Commitment }) => <div className="flex h-full items-center"><PriorityBadge priority={p.data.priority} /></div> },
+    { headerName: 'Status', field: 'status', minWidth: 170, enableRowGroup: true, valueFormatter: (p) => COMMITMENT_STATUSES.find((x) => x.value === p.value)?.label ?? p.value, cellRenderer: (p: { data: Commitment }) => <div className="flex h-full items-center"><CommitmentStatusBadge status={p.data.status} /></div> },
+    { headerName: 'Priority', field: 'priority', minWidth: 100, enableRowGroup: true, valueFormatter: (p) => (p.value ? titleCase(p.value) : ''), cellRenderer: (p: { data: Commitment }) => <div className="flex h-full items-center"><PriorityBadge priority={p.data.priority} /></div> },
     {
       headerName: 'Due',
       field: 'dueDate',
       minWidth: 140,
       sort: 'asc',
+      valueFormatter: (p) => (p.value ? fmtDate(p.value, { month: 'short', day: 'numeric', year: 'numeric' }) : ''),
       cellRenderer: (p: { data: Commitment }) => (
         <div className="flex h-full flex-col justify-center leading-tight">
           <span>{fmtDate(p.data.dueDate)}</span>
@@ -302,7 +304,7 @@ export function CommitmentsPanel({ clientId }: { clientId?: string }) {
       </div>
       {!data ? <DataGridSkeleton cols={clientId ? [34, 15, 12, 12, 27] : [26, 14, 13, 10, 11, 26]} rows={5} /> : null}
       {data && !data.length ? <EmptyState icon={ListChecks} title="No commitments yet" description="Create one during or after a session." /> : null}
-      {data?.length ? <DataGrid rows={rows} columns={columns} quickFilter={q} autoHeight onRowClick={(c) => setViewing(c)} /> : null}
+      {data?.length ? <DataGrid rows={rows} columns={columns} quickFilter={q} autoHeight groupable exportName={clientId ? 'client-commitments' : 'commitments'} onRowClick={(c) => setViewing(c)} /> : null}
 
       <CommitmentDialog open={!!dialog} onOpenChange={(v) => !v && setDialog(null)} initial={dialog ?? emptyCommitment()} clients={clients.data?.map((c) => ({ id: c.id, name: c.name }))} />
       <Dialog open={!!viewing} onOpenChange={(v) => !v && setViewing(null)}>

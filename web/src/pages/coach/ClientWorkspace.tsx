@@ -1,14 +1,14 @@
-import { AreaChart, ArrowLeft, BarChart3, BrainCircuit, CalendarClock, LayoutDashboard, LineChart, ListChecks, NotebookPen, Plus, Route, Save, Sparkles } from 'lucide-react'
+import { AreaChart, ArrowLeft, KeyRound, BarChart3, BrainCircuit, CalendarClock, ExternalLink, LayoutDashboard, LineChart, Link2, ListChecks, Mail, MapPin, NotebookPen, Phone, Plus, Route, Save, Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { AgLineChart, type TrendChartType } from '@/components/common/AgLineChart'
 import { AiGenerating } from '@/components/common/AiGenerating'
 import { mergeSeries } from '@/components/common/Charts'
-import { InsightCard } from '@/components/common/Insight'
 import { ErrorState, SectionTitle } from '@/components/common/Page'
 import { EngagementBadge } from '@/components/common/Status'
 import { CommitmentDialog, CommitmentsPanel, emptyCommitment } from '@/components/features/Commitments'
+import { BillingBadge, SubscriptionCard, type Subscription } from '@/components/features/Billing'
 import { GrowthView } from '@/components/features/Growth'
 import { IntelligenceView } from '@/components/features/IntelligenceView'
 import { ReflectionsList } from '@/components/features/Reflections'
@@ -17,7 +17,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/input'
-import { Avatar, Skeleton } from '@/components/ui/misc'
+import { Avatar, Skeleton, Tooltip } from '@/components/ui/misc'
+import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader } from '@/components/ui/dialog'
 import { Segmented, Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api, useApi } from '@/lib/api'
 import type { Commitment, Insight, MetricSeries, Session, Submission } from '@/lib/types'
@@ -32,19 +33,32 @@ interface ClientDetail {
     companySize: string
     location: string
     phone: string | null
+    /** Maintained by the client in Settings → Contact & links. */
+    links: { label: string; url: string }[] | null
     startDate: string
     coachNotes: string
     user: { name: string; email: string; avatarColor: string }
     program: { name: string; durationWeeks: number } | null
     commitments: Commitment[]
     sessions: Session[]
+    active: boolean
+    subscription: Subscription | null
   }
+  paypalEnv: 'sandbox' | 'live'
   engagement: { status: 'Active' | 'Slipping' | 'At risk'; daysSince: number | null }
   series: MetricSeries[]
   emotions: { early: Record<string, number>; recent: Record<string, number> }
   patterns: Insight[]
   recentReflections: Submission[]
   activity: { date: string; kind: string; text: string }[]
+}
+
+const linkHost = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return url
+  }
 }
 
 function HeaderSkeleton() {
@@ -67,7 +81,7 @@ function HeaderSkeleton() {
   )
 }
 
-/** Mirrors the Overview tab: AI summary, trends, patterns, recent reflections | notes, activity. */
+/** Mirrors the Overview tab: Report Card summary, trends, recent reflections | notes, profile, activity. */
 function OverviewSkeleton() {
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]" aria-busy="true">
@@ -94,21 +108,6 @@ function OverviewSkeleton() {
           </Card>
         </section>
         <section>
-          <SectionTitle>Emerging behavioral patterns</SectionTitle>
-          <div className="grid gap-2.5">
-            {[0, 1, 2].map((i) => (
-              <Card key={i} className="grid gap-2 p-4">
-                <div className="flex gap-2">
-                  <Skeleton className="h-5 w-36 rounded-full" />
-                  <Skeleton className="h-5 w-28 rounded-full" />
-                </div>
-                <Skeleton className="h-4 w-60" />
-                <Skeleton className="h-3 w-80 max-w-full" />
-              </Card>
-            ))}
-          </div>
-        </section>
-        <section>
           <SectionTitle>Recent reflections</SectionTitle>
           <Card className="divide-y">
             {[0, 1, 2, 3].map((i) => (
@@ -132,6 +131,18 @@ function OverviewSkeleton() {
           <CardContent className="grid gap-2">
             <Skeleton className="h-[132px] w-full" />
             <Skeleton className="h-8 w-28 justify-self-end" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Profile</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-2.5">
+            <Skeleton className="h-3 w-48" />
+            <Skeleton className="h-3 w-36" />
+            <Skeleton className="h-3 w-44" />
+            <Skeleton className="mt-1 h-3 w-40" />
+            <Skeleton className="h-3 w-32" />
           </CardContent>
         </Card>
         <Card>
@@ -183,6 +194,73 @@ function useChartType(): [TrendChartType, (t: TrendChartType) => void] {
   return [type, update]
 }
 
+/** New temporary password by email (when the welcome email didn't arrive or they forgot it). */
+function ResendSignIn({ clientId, email }: { clientId: string; email: string }) {
+  const [open, setOpen] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [result, setResult] = useState<{ emailSent: boolean; error?: string; tempPassword?: string } | null>(null)
+  return (
+    <>
+      <Tooltip content="Email a new temporary password">
+        <Button variant="ghost" size="icon" aria-label="Resend sign-in email" onClick={() => setOpen(true)}>
+          <KeyRound />
+        </Button>
+      </Tooltip>
+      <Dialog
+        open={open}
+        onOpenChange={(v) => {
+          setOpen(v)
+          if (!v) setResult(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader title="Resend sign-in email" description={`Creates a new temporary password for ${email} and emails it. Their current password stops working, and they choose a new one at sign-in.`} />
+          {result ? (
+            <DialogBody className="grid gap-2 text-[13px]">
+              {result.emailSent ? (
+                <p>Sent to {email}.</p>
+              ) : (
+                <>
+                  <p>The email was not sent ({result.error}). Share this temporary password with them yourself:</p>
+                  {result.tempPassword ? <code className="justify-self-start rounded-md bg-muted px-2 py-1 font-mono text-[14px]">{result.tempPassword}</code> : null}
+                </>
+              )}
+            </DialogBody>
+          ) : null}
+          <DialogFooter>
+            {result ? (
+              <Button onClick={() => setOpen(false)}>Done</Button>
+            ) : (
+              <>
+                <Button variant="ghost" onClick={() => setOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  disabled={sending}
+                  onClick={async () => {
+                    setSending(true)
+                    try {
+                      const r = await api<{ emailSent: boolean; error?: string; tempPassword?: string }>(`/discovery/clients/${clientId}/resend-sign-in`, { method: 'POST' })
+                      setResult(r)
+                      if (r.emailSent) toast.success('Sign-in email sent')
+                    } catch (e) {
+                      toast.error((e as Error).message)
+                    } finally {
+                      setSending(false)
+                    }
+                  }}
+                >
+                  Send new password
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
 export default function ClientWorkspace() {
   const { id } = useParams()
   const [params, setParams] = useSearchParams()
@@ -216,6 +294,8 @@ export default function ClientWorkspace() {
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-[22px] font-semibold tracking-tight">{p.user.name}</h1>
             <EngagementBadge status={data.engagement.status} />
+            {!p.active ? <Badge variant="danger">Inactive</Badge> : null}
+            {p.subscription && p.subscription.status === 'PAST_DUE' ? <BillingBadge status={p.subscription.status} failed={p.subscription.failedPayments} /> : null}
           </div>
           <div className="text-[13.5px] text-muted-foreground">
             {p.designation}, {p.company} · {p.industry}
@@ -231,6 +311,7 @@ export default function ClientWorkspace() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <ResendSignIn clientId={clientId} email={p.user.email} />
           <Button variant="outline" onClick={() => setNewCommitment(true)}>
             <Plus /> Commitment
           </Button>
@@ -254,7 +335,7 @@ export default function ClientWorkspace() {
             <NotebookPen /> Reflections
           </TabsTrigger>
           <TabsTrigger value="insights">
-            <BrainCircuit /> AI Insights
+            <BrainCircuit /> Report Card
           </TabsTrigger>
           <TabsTrigger value="commitments">
             <ListChecks /> Commitments
@@ -263,7 +344,7 @@ export default function ClientWorkspace() {
             <Route /> Growth Journey
           </TabsTrigger>
           <TabsTrigger value="sessions">
-            <CalendarClock /> Session History
+            <CalendarClock /> Session Calendar
           </TabsTrigger>
         </TabsList>
 
@@ -274,17 +355,17 @@ export default function ClientWorkspace() {
               <Card className="border-ai/20 bg-ai-soft/30">
                 <CardContent className="pt-5">
                   <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-ai">
-                    <Sparkles className="size-3" /> AI summary
+                    <Sparkles className="size-3" /> Report Card summary
                   </div>
                   {summary.data ? (
                     <p className="animate-rise text-[13.5px] leading-relaxed text-foreground/85">{summary.data.narrative}</p>
                   ) : summary.error ? (
                     <p className="text-[13px] text-muted-foreground">{summary.error}</p>
                   ) : (
-                    <AiGenerating className="py-1" lines={4} />
+                    <AiGenerating className="py-1" lines={4} steps={['Reading the analysis', 'Connecting the patterns', 'Writing the summary']} />
                   )}
                   <Button size="sm" variant="link" className="mt-1 h-auto px-0 text-ai" onClick={() => setParams({ tab: 'insights' })}>
-                    Open full analysis →
+                    Open report card →
                   </Button>
                 </CardContent>
               </Card>
@@ -312,15 +393,6 @@ export default function ClientWorkspace() {
                     <span className="ml-auto">Self-reported in weekly reflections</span>
                   </div>
                 </Card>
-              </section>
-
-              <section>
-                <SectionTitle right={<button className="text-[12.5px] text-muted-foreground hover:text-foreground cursor-pointer" onClick={() => setParams({ tab: 'insights' })}>All insights →</button>}>Emerging behavioral patterns</SectionTitle>
-                <div className="grid gap-2.5">
-                  {data.patterns.map((i) => (
-                    <InsightCard key={i.id} insight={i} />
-                  ))}
-                </div>
               </section>
 
               <section>
@@ -367,6 +439,50 @@ export default function ClientWorkspace() {
                   >
                     <Save /> Save notes
                   </Button>
+                </CardContent>
+              </Card>
+
+              {p.subscription ? <SubscriptionCard clientId={clientId} subscription={p.subscription} sandbox={data.paypalEnv === 'sandbox'} onChanged={reload} /> : null}
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Profile</CardTitle>
+                  <span className="text-[11px] text-muted-foreground">Updated by the client</span>
+                </CardHeader>
+                <CardContent className="grid gap-3 text-[13px]">
+                  <div className="grid gap-1.5 text-muted-foreground">
+                    <a href={`mailto:${p.user.email}`} className="flex items-center gap-2 hover:text-foreground">
+                      <Mail className="size-3.5 shrink-0" /> <span className="truncate">{p.user.email}</span>
+                    </a>
+                    {p.phone ? (
+                      <a href={`tel:${p.phone.replace(/[^\d+]/g, '')}`} className="flex items-center gap-2 hover:text-foreground">
+                        <Phone className="size-3.5 shrink-0" /> {p.phone}
+                      </a>
+                    ) : null}
+                    <span className="flex items-center gap-2">
+                      <MapPin className="size-3.5 shrink-0" /> {[p.location, p.companySize].filter(Boolean).join(' · ')}
+                    </span>
+                  </div>
+                  <div>
+                    <div className="mb-1.5 text-[11.5px] font-semibold uppercase tracking-wide text-muted-foreground">Links</div>
+                    {p.links?.length ? (
+                      <ul className="grid gap-1.5">
+                        {p.links.map((l) => (
+                          <li key={l.url}>
+                            <a href={l.url} target="_blank" rel="noopener noreferrer" className="group flex items-center gap-2">
+                              <Link2 className="size-3.5 shrink-0 text-muted-foreground" />
+                              <span className="min-w-0 truncate">
+                                <span className="font-medium group-hover:underline">{l.label}</span> <span className="text-muted-foreground">· {linkHost(l.url)}</span>
+                              </span>
+                              <ExternalLink className="size-3 shrink-0 text-muted-foreground opacity-0 transition group-hover:opacity-100" />
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-[12.5px] text-muted-foreground">No links added yet.</p>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
 

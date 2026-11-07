@@ -26,7 +26,7 @@ export default function Intelligence() {
             <BrainCircuit className="size-3.5" /> AI Coaching Intelligence
           </span>
         }
-        title="What you might have missed"
+        title="Report Cards"
         description="An analyst that has read every reflection and commitment. Each insight shows its evidence, dates and confidence — you decide what matters."
       />
       {!data ? <Loading /> : null}

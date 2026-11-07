@@ -9,6 +9,9 @@ export interface AuthUser {
   name: string
   email: string
   clientId?: string
+  mustChangePassword?: boolean
+  /** false: client's auto-renewal failed; read-only until the coach reactivates. */
+  clientActive?: boolean
 }
 
 declare global {
@@ -41,10 +44,15 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
   } catch {
     throw new HttpError(401, 'Session expired')
   }
-  const user = await prisma.user.findUnique({ where: { id: sub }, include: { clientProfile: { select: { id: true } } } })
+  const user = await prisma.user.findUnique({ where: { id: sub }, include: { clientProfile: { select: { id: true, active: true } } } })
   if (!user) throw new HttpError(401, 'User not found')
-  req.user = { id: user.id, role: user.role, name: user.name, email: user.email, clientId: user.clientProfile?.id }
+  req.user = { id: user.id, role: user.role, name: user.name, email: user.email, clientId: user.clientProfile?.id, mustChangePassword: user.mustChangePassword, clientActive: user.clientProfile?.active ?? true }
   attachUserToLogContext(req)
+  // Clients created from an intake payment must replace their emailed temporary password first.
+  if (user.mustChangePassword && !/^\/api\/auth\/(me|password)(\/|\?|$)/.test(req.originalUrl)) throw new HttpError(403, 'Please change your temporary password first')
+  // Inactive clients (renewal failed after PayPal's retries) can read but not change anything.
+  if (user.role === 'CLIENT' && user.clientProfile && !user.clientProfile.active && req.method !== 'GET' && !/^\/api\/(auth|notifications)\//.test(req.originalUrl))
+    throw new HttpError(402, 'Your program is paused because the renewal payment failed. Update your payment method in PayPal and contact your coach.')
   next()
 }
 

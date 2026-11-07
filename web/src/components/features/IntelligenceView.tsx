@@ -26,7 +26,7 @@ const SECTIONS: { key: string; label: string; blurb: string }[] = [
   { key: 'commitment', label: 'Commitments', blurb: 'Patterns across coaching commitments.' },
 ]
 
-/** Mirrors the AI Insights layout; the step label shows the analysis is running (it can take a few seconds with an LLM). */
+/** Mirrors the Report Card layout; the step label shows the analysis is running (it can take a few seconds with an LLM). */
 function ThinkingState() {
   const steps = ['Reading reflections', 'Detecting recurring patterns', 'Comparing recent vs. earlier weeks', 'Checking for contradictions', 'Analyzing emotional trends', 'Reviewing commitments']
   const [i, setI] = useState(0)
@@ -148,13 +148,13 @@ export function IntelligenceView({ clientId, compact }: { clientId: string; comp
 
   return (
     <div className="grid gap-5">
-      {/* Research assistant briefing */}
+      {/* Report Card summary */}
       <Card className="overflow-hidden">
         <div className="grid gap-4 p-5 md:grid-cols-[minmax(0,1fr)_auto]">
           <div className="min-w-0">
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold uppercase tracking-wide text-ai">
-                <Sparkles className="size-3.5" /> Research assistant briefing
+                <Sparkles className="size-3.5" /> Report Card summary
               </span>
               <Badge variant="outline">
                 <Database /> {data.overview.reflections} reflections · {data.overview.statements} statements
@@ -211,9 +211,6 @@ export function IntelligenceView({ clientId, compact }: { clientId: string; comp
       </Card>
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-dashed px-4 py-2.5 text-[12px] text-muted-foreground">
-        <span className="flex items-center gap-1.5">
-          <span className="size-2 rounded-full bg-foreground/60" /> <b className="font-medium text-foreground/80">Observed facts</b> — counts, dates and verbatim quotes
-        </span>
         <span className="flex items-center gap-1.5">
           <span className="size-2 rounded-full bg-ai" /> <b className="font-medium text-foreground/80">AI hypotheses</b> — possibilities to explore, never diagnoses
         </span>
