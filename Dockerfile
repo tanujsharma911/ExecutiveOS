@@ -13,6 +13,9 @@ COPY server/prisma/ ./server/prisma/
 COPY server/prisma.config.ts ./server/prisma.config.ts
 COPY web/package*.json ./web/
 
+# Dummy DATABASE_URL so Prisma client can compile during build without requiring a live database
+ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
+
 # Install dependencies for both server and web
 RUN npm ci --prefix server --include=dev && \
     npm ci --prefix web --include=dev
