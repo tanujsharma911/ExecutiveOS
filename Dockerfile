@@ -6,16 +6,18 @@ WORKDIR /app
 # Install OpenSSL and CA certificates (required by Prisma)
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 
-# Copy dependency manifests
+# Copy dependency manifests and Prisma files (required for server postinstall hook: prisma generate)
 COPY package*.json ./
 COPY server/package*.json ./server/
+COPY server/prisma/ ./server/prisma/
+COPY server/prisma.config.ts ./server/prisma.config.ts
 COPY web/package*.json ./web/
 
 # Install dependencies for both server and web
 RUN npm ci --prefix server --include=dev && \
     npm ci --prefix web --include=dev
 
-# Copy source files
+# Copy the remaining source files
 COPY server/ ./server/
 COPY web/ ./web/
 
