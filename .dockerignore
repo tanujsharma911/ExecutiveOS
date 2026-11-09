@@ -1,0 +1,11 @@
+node_modules
+dist
+web/dist
+server/dist
+server/src/generated
+.git
+.env
+*.log
+.DS_Store
+Claude outputs
+temp

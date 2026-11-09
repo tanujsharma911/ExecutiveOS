@@ -12,6 +12,10 @@
     "setup": "npm run install:all && npm run db:up && npm run db:migrate && npm run db:seed",
     "dev": "concurrently -n api,web -c blue,magenta \"npm --prefix server run dev\" \"npm --prefix web run dev\"",
     "build": "npm --prefix web run build",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "docker:seed": "docker compose exec app npm --prefix server run db:seed",
     "typecheck": "npm --prefix server run typecheck && npm --prefix web run typecheck",
     "ai:smoke": "npm --prefix server run ai:smoke",
     "ai:fallback-check": "npm --prefix server run ai:fallback-check"

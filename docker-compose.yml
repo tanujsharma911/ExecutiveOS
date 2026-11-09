@@ -1,5 +1,48 @@
 services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: executiveos-app
+    restart: unless-stopped
+    ports:
+      - "7461:7461"
+    env_file:
+      - .env
+    environment:
+      - PORT=7461
+
+  tunnel:
+    image: ngrok/ngrok:alpine
+    container_name: executiveos-tunnel
+    restart: unless-stopped
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        if [ -z "$$NGROK_AUTHTOKEN" ]; then
+          echo "======================================================================"
+          echo "⚠️  NGROK_AUTHTOKEN is not set in .env"
+          echo "    The app is running locally at http://localhost:7461"
+          echo "    To enable free public tunneling, add NGROK_AUTHTOKEN to your .env"
+          echo "======================================================================"
+          sleep infinity
+        elif [ -n "$$NGROK_DOMAIN" ]; then
+          echo "Starting ngrok tunnel on static domain: $$NGROK_DOMAIN"
+          ngrok http app:7461 --domain="$$NGROK_DOMAIN"
+        else
+          echo "Starting ngrok tunnel with random domain..."
+          ngrok http app:7461
+        fi
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+      NGROK_DOMAIN: ${NGROK_DOMAIN:-}
+    depends_on:
+      - app
+
+  # Optional local Postgres container (use only if not using Neon: docker compose --profile local-db up)
   postgres:
+    profiles:
+      - local-db
     image: postgres:16-alpine
     container_name: executiveos-postgres
     restart: unless-stopped
