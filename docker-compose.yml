@@ -12,14 +12,6 @@ services:
     environment:
       - PORT=7461
 
-  tunnel:
-    image: cloudflare/cloudflared:latest
-    container_name: executiveos-tunnel
-    restart: unless-stopped
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
-    depends_on:
-      - app
-
   # Optional local Postgres container (use only if not using Neon: docker compose --profile local-db up)
   postgres:
     profiles:
