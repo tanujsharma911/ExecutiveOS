@@ -12,6 +12,7 @@ import { requestLogger } from './lib/requestLogger.js'
 import { startSubscriptionSync } from './lib/subscriptions.js'
 import { HttpError, requireAuth, signToken } from './auth.js'
 import { prisma } from './db.js'
+import { appUrl } from './lib/email.js'
 import { client } from './routes/client.js'
 import { coach } from './routes/coach.js'
 import { discovery } from './routes/discovery.js'
@@ -20,6 +21,7 @@ import { publicRoutes } from './routes/public.js'
 import { work } from './routes/work.js'
 
 const app = express()
+app.set('trust proxy', 1)
 const log = createLogger('server')
 app.use(requestLogger)
 app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') ?? true }))
@@ -137,6 +139,6 @@ app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
 
 const port = Number(process.env.PORT ?? 7461)
 startSubscriptionSync()
-app.listen(port, () => log.info(`ExecutiveOS API listening on http://localhost:${port}`, { aiMode: aiMode(), aiModel: aiModelName(), logLevel: process.env.LOG_LEVEL ?? 'info' }))
+app.listen(port, () => log.info('ExecutiveOS API listening', { url: appUrl(), aiMode: aiMode(), aiModel: aiModelName(), logLevel: process.env.LOG_LEVEL ?? 'info' }))
 
 process.on('unhandledRejection', (reason) => log.error('Unhandled promise rejection', { error: reason }))

@@ -107,7 +107,7 @@ All configuration lives in the root `.env` (copy `.env.example`). The main group
 | Group | Variables | Notes |
 |---|---|---|
 | Database | `POSTGRES_*`, `DATABASE_URL` | Docker Compose starts Postgres 16 |
-| API | `PORT`, `JWT_SECRET`, `CORS_ORIGIN`, `APP_URL` | `APP_URL` is used for links in emails |
+| API | `PORT`, `JWT_SECRET`, `CORS_ORIGIN`, `APP_URL` | `APP_URL` is used for links in emails; on Render, its public URL is used if `APP_URL` is unset or still points to localhost |
 | Demo | `SHOW_DEMO_ACCOUNTS`, `SEED_COACH_PASSWORD`, `SEED_CLIENT_PASSWORD` | See [Demo mode](#demo-mode-and-passwords) |
 | AI | `GOOGLE_API_KEY`, `GEMINI_MODEL`, `GROQ_API_KEY`, `GROQ_MODEL`, `DETERMINISTIC_FALLBACK` | See [AI layer](#ai-layer-langchain--langgraph) |
 | PayPal | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_ENV`, `PAYPAL_WEBHOOK_ID`, `SUBSCRIPTION_SYNC_MINUTES` | See [PayPal sandbox setup](#paypal-sandbox-setup) |
@@ -487,7 +487,7 @@ Every API request and every LLM and tool call is logged to the server console.
 
 `render.yaml` is a Render Blueprint. It creates one **Starter web service** that runs the API and also serves the built web app (`web/dist`), plus one **Postgres 16** database (basic-256mb). About $13/month in total.
 
-Because the web app and API share one URL, the browser calls `/api` on the same origin: no CORS setup and no `VITE_API_URL`. `APP_URL` (used in emails and intake links) defaults to Render's public URL.
+Because the web app and API share one URL, the browser calls `/api` on the same origin: no CORS setup and no `VITE_API_URL`. `APP_URL` (used in emails and intake links) defaults to Render's public URL, including when a stale localhost value is present.
 
 1. Push the repo to GitHub.
 2. In Render: **New → Blueprint**, pick the repo. Render reads `render.yaml`.

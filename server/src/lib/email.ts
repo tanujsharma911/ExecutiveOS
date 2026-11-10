@@ -21,7 +21,13 @@ export interface Email {
 export const emailConfigured = () => !!process.env.RESEND_API_KEY
 
 /** App URL used in email links (login, intake). */
-export const appUrl = () => (process.env.APP_URL || `http://localhost:${process.env.WEB_PORT || 7462}`).replace(/\/$/, '')
+export const appUrl = () => {
+  const configured = process.env.APP_URL?.trim()
+  const renderUrl = process.env.RENDER_EXTERNAL_URL?.trim()
+  const configuredIsLocal = configured ? /^https?:\/\/(localhost|127\.0\.0\.1)(?::\d+)?(?:\/|$)/i.test(configured) : false
+  const url = renderUrl && (!configured || configuredIsLocal) ? renderUrl : configured || renderUrl || `http://localhost:${process.env.WEB_PORT || 7462}`
+  return url.replace(/\/$/, '')
+}
 
 const escape = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 
